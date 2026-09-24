@@ -95,10 +95,10 @@ cmake -B build-sdl -S SDL -G Ninja \
     -DSDL_SHARED=ON
 ninja -C build-sdl install
 
-echo "===> Building CPython 3.11 for Android NDK..."
+echo "===> Building CPython 3.12 for Android NDK..."
 cd "${BUILD_TMP}"
 if [ ! -d "cpython" ]; then
-    git clone --depth 1 -b 3.11 https://github.com/python/cpython.git
+    git clone --depth 1 -b 3.12 https://github.com/python/cpython.git
 fi
 cd cpython
 mkdir -p build-android
