@@ -32,6 +32,7 @@ export CC="${TOOLCHAIN}/bin/${TARGET_TRIPLE}${API_LEVEL}-clang"
 export CXX="${TOOLCHAIN}/bin/${TARGET_TRIPLE}${API_LEVEL}-clang++"
 export AR="${TOOLCHAIN}/bin/llvm-ar"
 export RANLIB="${TOOLCHAIN}/bin/llvm-ranlib"
+export READELF="${TOOLCHAIN}/bin/llvm-readelf"
 export CMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake"
 
 echo "===> Building mimalloc (Fast memory allocator)..."
@@ -93,6 +94,27 @@ cmake -B build-sdl -S SDL -G Ninja \
     -DSDL_STATIC=OFF \
     -DSDL_SHARED=ON
 ninja -C build-sdl install
+
+echo "===> Building CPython 3.11 for Android NDK..."
+cd "${BUILD_TMP}"
+if [ ! -d "cpython" ]; then
+    git clone --depth 1 -b 3.11 https://github.com/python/cpython.git
+fi
+cd cpython
+mkdir -p build-android
+cd build-android
+../configure \
+    --host=${TARGET_TRIPLE} \
+    --build=$(../config.guess) \
+    --with-build-python=python3 \
+    --prefix="${SYSROOT_DIR}/usr" \
+    --enable-shared \
+    --without-ensurepip \
+    --disable-test-modules \
+    ac_cv_file__dev_ptmx=no \
+    ac_cv_file__dev_ptc=no
+make -j$(nproc)
+make install
 
 echo "===> Packaging Sysroot..."
 cd "${BASE_DIR}"
