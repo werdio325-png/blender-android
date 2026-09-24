@@ -114,6 +114,33 @@ cmake -B build-png -S libpng -G Ninja \
     -DPNG_TESTS=OFF
 ninja -C build-png install
 
+echo "===> Building libepoxy (EGL/GL loader for Android)..."
+cd "${BUILD_TMP}"
+if [ ! -d "libepoxy" ]; then
+    git clone --depth 1 https://github.com/anholt/libepoxy.git
+fi
+cat << MEOF > cross_android_epoxy.txt
+[binaries]
+c = '${CC}'
+cpp = '${CXX}'
+ar = '${AR}'
+strip = '${TOOLCHAIN}/bin/llvm-strip'
+pkg-config = 'pkg-config'
+
+[host_machine]
+system = 'android'
+cpu_family = 'aarch64'
+cpu = 'arm64'
+endian = 'little'
+MEOF
+rm -rf build-epoxy
+meson setup build-epoxy libepoxy \
+    --cross-file cross_android_epoxy.txt \
+    --prefix="${SYSROOT_DIR}/usr" \
+    -Degl=yes -Dglx=no -Dx11=no -Dtests=false \
+    --default-library=shared
+ninja -C build-epoxy install
+
 echo "===> Building FreeType..."
 cd "${BUILD_TMP}"
 if [ ! -d "freetype" ]; then
