@@ -14,7 +14,9 @@ mkdir -p "${SYSROOT_DIR}/usr/include" "${SYSROOT_DIR}/usr/lib" "${BUILD_TMP}"
 
 echo "===> Checking Android NDK..."
 if [ -z "${ANDROID_NDK_ROOT:-}" ]; then
-    if [ -d "/usr/local/lib/android/sdk/ndk/26.3.11579264" ]; then
+    if [ -d "/usr/local/lib/android/sdk/ndk/27.3.13750724" ]; then
+        export ANDROID_NDK_ROOT="/usr/local/lib/android/sdk/ndk/27.3.13750724"
+    elif [ -d "/usr/local/lib/android/sdk/ndk/26.3.11579264" ]; then
         export ANDROID_NDK_ROOT="/usr/local/lib/android/sdk/ndk/26.3.11579264"
     else
         echo "Downloading Android NDK ${NDK_VERSION}..."
@@ -57,7 +59,9 @@ cmake -B build-onetbb -S oneTBB -G Ninja \
     -DANDROID_PLATFORM=android-${API_LEVEL} \
     -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
     -DTBB_TEST=OFF \
-    -DTBB_EXAMPLES=OFF
+    -DTBB_EXAMPLES=OFF \
+    -DTBBMALLOC_BUILD=OFF \
+    -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version"
 ninja -C build-onetbb install
 
 echo "===> Building FreeType..."
