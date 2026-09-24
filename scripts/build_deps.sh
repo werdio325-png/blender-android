@@ -101,6 +101,10 @@ if [ ! -d "cpython" ]; then
     git clone --depth 1 -b 3.12 https://github.com/python/cpython.git
 fi
 cd cpython
+echo "*disabled*" > Modules/Setup.local
+echo "_ctypes" >> Modules/Setup.local
+echo "_ctypes_test" >> Modules/Setup.local
+echo "_tkinter" >> Modules/Setup.local
 rm -rf build-android
 mkdir -p build-android
 cd build-android
@@ -113,6 +117,7 @@ cd build-android
     --without-ensurepip \
     --disable-test-modules \
     --disable-ipv6 \
+    py_cv_module__ctypes=n/a \
     ac_cv_buggy_getaddrinfo=no \
     ac_cv_file__dev_ptmx=no \
     ac_cv_file__dev_ptc=no
