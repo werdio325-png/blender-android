@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Configuration
+NDK_VERSION="r26d"
+API_LEVEL="29"
+ARCH="aarch64"
+TARGET_TRIPLE="aarch64-linux-android"
+BASE_DIR="/data/user/0/com.antigravity.mobile/files/.gemini/antigravity/scratch"
+SYSROOT_DIR="/sysroot-android-arm64"
+BUILD_TMP="/build-tmp"
+
+mkdir -p "/usr/include" "/usr/lib" ""
+
+echo "===> Checking Android NDK..."
+if [ -z "${ANDROID_NDK_ROOT:-}" ]; then
+    if [ -d "/usr/local/lib/android/sdk/ndk/26.3.11579264" ]; then
+        export ANDROID_NDK_ROOT="/usr/local/lib/android/sdk/ndk/26.3.11579264"
+    else
+        echo "Downloading Android NDK ${NDK_VERSION}..."
+        wget -q "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip" -O ndk.zip
+        unzip -q ndk.zip -d ""
+        export ANDROID_NDK_ROOT="/android-ndk-${NDK_VERSION}"
+    fi
+fi
+
+TOOLCHAIN="${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64"
+export CC="${TOOLCHAIN}/bin/${TARGET_TRIPLE}${API_LEVEL}-clang"
+export CXX="${TOOLCHAIN}/bin/${TARGET_TRIPLE}${API_LEVEL}-clang++"
+export AR="${TOOLCHAIN}/bin/llvm-ar"
+export RANLIB="${TOOLCHAIN}/bin/llvm-ranlib"
+export CMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake"
+
+echo "===> Building mimalloc (Fast memory allocator)..."
+cd ""
+if [ ! -d "mimalloc" ]; then
+    git clone --depth 1 https://github.com/microsoft/mimalloc.git
+fi
+cmake -B build-mimalloc -S mimalloc -G Ninja     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}"     -DANDROID_ABI=arm64-v8a     -DANDROID_PLATFORM=android-${API_LEVEL}     -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr"     -DMI_BUILD_TESTS=OFF     -DMI_BUILD_SHARED=ON
+ninja -C build-mimalloc install
+
+echo "===> Building oneTBB (Thread Building Blocks)..."
+cd ""
+if [ ! -d "oneTBB" ]; then
+    git clone --depth 1 https://github.com/oneapi-src/oneTBB.git
+fi
+cmake -B build-onetbb -S oneTBB -G Ninja     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}"     -DANDROID_ABI=arm64-v8a     -DANDROID_PLATFORM=android-${API_LEVEL}     -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr"     -DTBB_TEST=OFF     -DTBB_EXAMPLES=OFF
+ninja -C build-onetbb install
+
+echo "===> Building FreeType..."
+cd ""
+if [ ! -d "freetype" ]; then
+    git clone --depth 1 https://gitlab.freedesktop.org/freetype/freetype.git
+fi
+cmake -B build-freetype -S freetype -G Ninja     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}"     -DANDROID_ABI=arm64-v8a     -DANDROID_PLATFORM=android-${API_LEVEL}     -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr"     -DFT_DISABLE_ZLIB=ON     -DFT_DISABLE_PNG=ON     -DBUILD_SHARED_LIBS=ON
+ninja -C build-freetype install
+
+echo "===> Building SDL3 (Windowing, Audio, Vulkan Surface)..."
+cd ""
+if [ ! -d "SDL" ]; then
+    git clone --depth 1 https://github.com/libsdl-org/SDL.git
+fi
+cmake -B build-sdl -S SDL -G Ninja     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}"     -DANDROID_ABI=arm64-v8a     -DANDROID_PLATFORM=android-${API_LEVEL}     -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr"     -DSDL_VULKAN=ON     -DSDL_STATIC=OFF     -DSDL_SHARED=ON
+ninja -C build-sdl install
+
+echo "===> Packaging Sysroot..."
+cd ""
+tar -czf blender-deps-android-arm64.tar.gz -C "" .
+echo "===> Done! Created blender-deps-android-arm64.tar.gz"
