@@ -33,6 +33,9 @@ export CXX="${TOOLCHAIN}/bin/${TARGET_TRIPLE}${API_LEVEL}-clang++"
 export AR="${TOOLCHAIN}/bin/llvm-ar"
 export RANLIB="${TOOLCHAIN}/bin/llvm-ranlib"
 export READELF="${TOOLCHAIN}/bin/llvm-readelf"
+export CFLAGS="-fPIC -ftls-model=global-dynamic"
+export CXXFLAGS="-fPIC -ftls-model=global-dynamic"
+export LDFLAGS="-fPIC"
 export CMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake"
 
 echo "===> Building mimalloc (Fast memory allocator)..."
@@ -117,6 +120,8 @@ cd build-android
     --without-ensurepip \
     --disable-test-modules \
     --disable-ipv6 \
+    CFLAGS="${CFLAGS}" \
+    LDFLAGS="${LDFLAGS}" \
     py_cv_module__ctypes=n/a \
     ac_cv_buggy_getaddrinfo=no \
     ac_cv_file__dev_ptmx=no \
