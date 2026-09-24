@@ -108,10 +108,11 @@ cmake -B build-freetype -S freetype -G Ninja \
     -DANDROID_ABI=arm64-v8a \
     -DANDROID_PLATFORM=android-${API_LEVEL} \
     -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
-    -DFT_DISABLE_ZLIB=OFF \
-    -DFT_DISABLE_PNG=OFF \
-    -DPNG_PNG_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
-    -DPNG_LIBRARY="${SYSROOT_DIR}/usr/lib/libpng16.so" \
+    -DFT_DISABLE_ZLIB=ON \
+    -DFT_DISABLE_PNG=ON \
+    -DFT_DISABLE_BZIP2=ON \
+    -DFT_DISABLE_BROTLI=ON \
+    -DFT_DISABLE_HARFBUZZ=ON \
     -DBUILD_SHARED_LIBS=ON
 ninja -C build-freetype install
 
