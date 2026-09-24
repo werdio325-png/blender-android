@@ -15,6 +15,7 @@ if [ -z "${ANDROID_NDK_ROOT:-}" ]; then
     fi
 fi
 
+TOOLCHAIN="${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64"
 CMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake"
 
 echo "===> Unpacking dependencies sysroot..."
@@ -22,6 +23,22 @@ if [ -f "blender-deps-android-arm64.tar.gz" ]; then
     mkdir -p "${SYSROOT_DIR}"
     tar -xzf blender-deps-android-arm64.tar.gz -C "${SYSROOT_DIR}"
 fi
+
+echo "===> Creating Android Vulkan pkg-config..."
+mkdir -p "${SYSROOT_DIR}/usr/lib/pkgconfig"
+cat << VEOF > "${SYSROOT_DIR}/usr/lib/pkgconfig/vulkan.pc"
+prefix=${SYSROOT_DIR}/usr
+exec_prefix=\${prefix}
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: Vulkan-Loader
+Description: Vulkan Loader for Android NDK
+Version: 1.3.290
+Libs: -L${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL} -lvulkan
+Cflags: -I${TOOLCHAIN}/sysroot/usr/include
+VEOF
+export PKG_CONFIG_PATH="${SYSROOT_DIR}/usr/lib/pkgconfig:${SYSROOT_DIR}/usr/share/pkgconfig:${PKG_CONFIG_PATH:-}"
 
 echo "===> Cloning Blender source (v5.2.0)..."
 mkdir -p "${BUILD_TMP}"
@@ -38,7 +55,16 @@ cmake -B build-blender -S blender -G Ninja \
     -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr" \
     -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version" \
     -DWITH_VULKAN=ON \
+    -DVulkan_INCLUDE_DIRS="${TOOLCHAIN}/sysroot/usr/include" \
+    -DVulkan_LIBRARIES="${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL}/libvulkan.so" \
     -DWITH_GHOST_SDL=ON \
+    -DWITH_GHOST_X11=OFF \
+    -DWITH_GHOST_WAYLAND=OFF \
+    -DWITH_X11=OFF \
+    -DWITH_X11_XINPUT=OFF \
+    -DWITH_X11_XF86VMODE=OFF \
+    -DWITH_X11_XFIXES=OFF \
+    -DWITH_X11_ALPHA=OFF \
     -DWITH_PYTHON=ON \
     -DPYTHON_INCLUDE_DIR="${SYSROOT_DIR}/usr/include/python3.12" \
     -DPYTHON_LIBRARY="${SYSROOT_DIR}/usr/lib/libpython3.12.so" \
@@ -74,6 +100,8 @@ cmake -B build-blender -S blender -G Ninja \
     -DWITH_IMAGE_CINEON=OFF \
     -DWITH_IMAGE_HDR=OFF \
     -DWITH_IMAGE_DDS=OFF \
+    -DWITH_AUDASPACE=OFF \
+    -DWITH_SYSTEM_AUDASPACE=OFF \
     -DWITH_INTERNATIONAL=OFF \
     -DWITH_BUILDINFO=OFF
 
