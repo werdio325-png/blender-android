@@ -54,6 +54,10 @@ cmake -B build-blender -S blender -G Ninja \
     -DZSTD_LIBRARY="${SYSROOT_DIR}/usr/lib/libzstd.so" \
     -DEPOXY_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
     -DEPOXY_LIBRARY="${SYSROOT_DIR}/usr/lib/libepoxy.so" \
+    -Dfmt_DIR="${SYSROOT_DIR}/usr/lib/cmake/fmt" \
+    -DWITH_GMP=OFF \
+    -DWITH_BOOST=OFF \
+    -DWITH_LLVM=OFF \
     -DWITH_MEM_JEMALLOC=OFF \
     -DWITH_CYCLES=OFF \
     -DWITH_OPENIMAGEIO=OFF \
