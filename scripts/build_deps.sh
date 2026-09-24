@@ -68,6 +68,21 @@ cmake -B build-onetbb -S oneTBB -G Ninja \
     -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version"
 ninja -C build-onetbb install
 
+echo "===> Building fmt (Fast C++ formatting library)..."
+cd "${BUILD_TMP}"
+if [ ! -d "fmt" ]; then
+    git clone --depth 1 https://github.com/fmtlib/fmt.git
+fi
+cmake -B build-fmt -S fmt -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
+    -DANDROID_ABI=arm64-v8a \
+    -DANDROID_PLATFORM=android-${API_LEVEL} \
+    -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
+    -DFMT_TEST=OFF \
+    -DFMT_DOC=OFF \
+    -DBUILD_SHARED_LIBS=ON
+ninja -C build-fmt install
+
 echo "===> Building zstd (Fast compression)..."
 cd "${BUILD_TMP}"
 if [ ! -d "zstd" ]; then
