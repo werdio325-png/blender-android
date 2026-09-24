@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - 'scripts/build_blender.sh'
+      - 'scripts/build_deps.sh'
       - '.github/workflows/build-apk.yml'
 
 jobs:
@@ -17,7 +18,7 @@ jobs:
       - name: Set up Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build git wget tar zip unzip openjdk-17-jdk
+          sudo apt-get install -y cmake ninja-build git wget tar zip unzip openjdk-17-jdk meson pkg-config
 
       - name: Cache Android Dependencies Sysroot
         id: cache-deps
