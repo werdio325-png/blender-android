@@ -137,7 +137,7 @@ rm -rf build-epoxy
 meson setup build-epoxy libepoxy \
     --cross-file cross_android_epoxy.txt \
     --prefix="${SYSROOT_DIR}/usr" \
-    -Degl=yes -Dglx=no -Dx11=no -Dtests=false \
+    -Degl=yes -Dglx=no -Dx11=false -Dtests=false -Ddocs=false \
     --default-library=shared
 ninja -C build-epoxy install
 
