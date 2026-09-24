@@ -50,6 +50,8 @@ cmake -B build-blender -S blender -G Ninja \
     -DJPEG_LIBRARY="${SYSROOT_DIR}/usr/lib/libjpeg.so" \
     -DPNG_PNG_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
     -DPNG_LIBRARY="${SYSROOT_DIR}/usr/lib/libpng16.so" \
+    -DZSTD_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
+    -DZSTD_LIBRARY="${SYSROOT_DIR}/usr/lib/libzstd.so" \
     -DWITH_MEM_JEMALLOC=OFF \
     -DWITH_CYCLES=OFF \
     -DWITH_OPENIMAGEIO=OFF \
