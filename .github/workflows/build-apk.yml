@@ -1,0 +1,47 @@
+name: Build Blender Android APK
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Build Dependencies Sysroot (Android ARM64)"]
+    types:
+      - completed
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build git wget tar zip unzip openjdk-17-jdk
+
+      - name: Download Sysroot from Dependencies Run
+        uses: actions/download-artifact@v4
+        with:
+          name: blender-deps-android-arm64
+          path: .
+        continue-on-error: true
+
+      - name: Fallback Build Dependencies if Not Found
+        run: |
+          if [ ! -f "blender-deps-android-arm64.tar.gz" ]; then
+            echo "Sysroot artifact not found, building from scratch..."
+            chmod +x scripts/build_deps.sh
+            ./scripts/build_deps.sh
+          fi
+
+      - name: Build Blender and Assemble APK
+        run: |
+          chmod +x scripts/build_blender.sh
+          ./scripts/build_blender.sh
+
+      - name: Upload Blender APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Blender-Android-arm64-APK
+          path: Blender-Android-arm64.apk
+          retention-days: 30
