@@ -27,7 +27,7 @@ echo "===> Cloning Blender source (v4.3)..."
 mkdir -p "${BUILD_TMP}"
 cd "${BUILD_TMP}"
 if [ ! -d "blender" ]; then
-    git clone --depth 1 --branch v4.3.2 https://projects.blender.org/blender/blender.git
+    git clone --depth 1 --branch v5.2.0 https://projects.blender.org/blender/blender.git
 fi
 
 echo "===> Configuring Blender for Android ARM64..."
@@ -40,8 +40,8 @@ cmake -B build-blender -S blender -G Ninja \
     -DWITH_VULKAN=ON \
     -DWITH_GHOST_SDL=ON \
     -DWITH_PYTHON=ON \
-    -DPYTHON_INCLUDE_DIR="${SYSROOT_DIR}/usr/include/python3.11" \
-    -DPYTHON_LIBRARY="${SYSROOT_DIR}/usr/lib/libpython3.11.so" \
+    -DPYTHON_INCLUDE_DIR="${SYSROOT_DIR}/usr/include/python3.12" \
+    -DPYTHON_LIBRARY="${SYSROOT_DIR}/usr/lib/libpython3.12.so" \
     -DTBB_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
     -DTBB_LIBRARY="${SYSROOT_DIR}/usr/lib/libtbb.so" \
     -DFREETYPE_INCLUDE_DIRS="${SYSROOT_DIR}/usr/include/freetype2" \
