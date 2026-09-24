@@ -1,11 +1,11 @@
-name: Build Blender Android APK
+name: Build Blender 5.2 Android APK
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: ["Build Dependencies Sysroot (Android ARM64)"]
-    types:
-      - completed
+  push:
+    paths:
+      - 'scripts/build_blender.sh'
+      - '.github/workflows/build-apk.yml'
 
 jobs:
   build-apk:
@@ -19,22 +19,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build git wget tar zip unzip openjdk-17-jdk
 
-      - name: Download Sysroot from Dependencies Run
-        uses: actions/download-artifact@v4
+      - name: Cache Android Dependencies Sysroot
+        id: cache-deps
+        uses: actions/cache@v4
         with:
-          name: blender-deps-android-arm64
-          path: .
-        continue-on-error: true
+          path: sysroot-android-arm64
+          key: ${{ runner.os }}-android-deps-${{ hashFiles('scripts/build_deps.sh') }}
 
-      - name: Fallback Build Dependencies if Not Found
+      - name: Build Dependencies if Not Cached
+        if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
-          if [ ! -f "blender-deps-android-arm64.tar.gz" ]; then
-            echo "Sysroot artifact not found, building from scratch..."
-            chmod +x scripts/build_deps.sh
-            ./scripts/build_deps.sh
-          fi
+          chmod +x scripts/build_deps.sh
+          ./scripts/build_deps.sh
 
-      - name: Build Blender and Assemble APK
+      - name: Build Blender 5.2 and Assemble APK
         run: |
           chmod +x scripts/build_blender.sh
           ./scripts/build_blender.sh
@@ -42,6 +40,6 @@ jobs:
       - name: Upload Blender APK
         uses: actions/upload-artifact@v4
         with:
-          name: Blender-Android-arm64-APK
+          name: Blender-5.2-Android-arm64-APK
           path: Blender-Android-arm64.apk
           retention-days: 30
