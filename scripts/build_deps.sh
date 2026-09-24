@@ -68,6 +68,22 @@ cmake -B build-onetbb -S oneTBB -G Ninja \
     -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version"
 ninja -C build-onetbb install
 
+echo "===> Building zstd (Fast compression)..."
+cd "${BUILD_TMP}"
+if [ ! -d "zstd" ]; then
+    git clone --depth 1 https://github.com/facebook/zstd.git
+fi
+cmake -B build-zstd -S zstd/build/cmake -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
+    -DANDROID_ABI=arm64-v8a \
+    -DANDROID_PLATFORM=android-${API_LEVEL} \
+    -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
+    -DZSTD_BUILD_PROGRAMS=OFF \
+    -DZSTD_BUILD_TESTS=OFF \
+    -DZSTD_BUILD_SHARED=ON \
+    -DZSTD_BUILD_STATIC=OFF
+ninja -C build-zstd install
+
 echo "===> Building libjpeg-turbo..."
 cd "${BUILD_TMP}"
 if [ ! -d "libjpeg-turbo" ]; then
