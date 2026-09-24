@@ -101,6 +101,7 @@ if [ ! -d "cpython" ]; then
     git clone --depth 1 -b 3.12 https://github.com/python/cpython.git
 fi
 cd cpython
+rm -rf build-android
 mkdir -p build-android
 cd build-android
 ../configure \
@@ -111,6 +112,8 @@ cd build-android
     --enable-shared \
     --without-ensurepip \
     --disable-test-modules \
+    --disable-ipv6 \
+    ac_cv_buggy_getaddrinfo=no \
     ac_cv_file__dev_ptmx=no \
     ac_cv_file__dev_ptc=no
 make -j$(nproc)
