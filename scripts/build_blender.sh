@@ -23,7 +23,7 @@ if [ -f "blender-deps-android-arm64.tar.gz" ]; then
     tar -xzf blender-deps-android-arm64.tar.gz -C "${SYSROOT_DIR}"
 fi
 
-echo "===> Cloning Blender source (v4.3)..."
+echo "===> Cloning Blender source (v5.2.0)..."
 mkdir -p "${BUILD_TMP}"
 cd "${BUILD_TMP}"
 if [ ! -d "blender" ]; then
@@ -46,6 +46,10 @@ cmake -B build-blender -S blender -G Ninja \
     -DTBB_LIBRARY="${SYSROOT_DIR}/usr/lib/libtbb.so" \
     -DFREETYPE_INCLUDE_DIRS="${SYSROOT_DIR}/usr/include/freetype2" \
     -DFREETYPE_LIBRARY="${SYSROOT_DIR}/usr/lib/libfreetype.so" \
+    -DJPEG_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
+    -DJPEG_LIBRARY="${SYSROOT_DIR}/usr/lib/libjpeg.so" \
+    -DPNG_PNG_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
+    -DPNG_LIBRARY="${SYSROOT_DIR}/usr/lib/libpng16.so" \
     -DWITH_MEM_JEMALLOC=OFF \
     -DWITH_CYCLES=OFF \
     -DWITH_OPENIMAGEIO=OFF \
@@ -56,6 +60,12 @@ cmake -B build-blender -S blender -G Ninja \
     -DWITH_USD=OFF \
     -DWITH_CODEC_FFMPEG=OFF \
     -DWITH_DRACO=OFF \
+    -DWITH_IMAGE_OPENEXR=OFF \
+    -DWITH_IMAGE_TIFF=OFF \
+    -DWITH_IMAGE_OPENJPEG=OFF \
+    -DWITH_IMAGE_CINEON=OFF \
+    -DWITH_IMAGE_HDR=OFF \
+    -DWITH_IMAGE_DDS=OFF \
     -DWITH_INTERNATIONAL=OFF \
     -DWITH_BUILDINFO=OFF
 
