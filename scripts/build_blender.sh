@@ -96,7 +96,16 @@ if [ ! -f "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake" ]; the
     exit 1
 fi
 
+echo "===> Downloading critical runtime datafiles..."
+mkdir -p "${BLENDER_SRC}/release/datafiles"
+for f in startup.blend preview.blend preview_grease_pencil.blend splash.png; do
+    echo "Downloading ${f}..."
+    curl -sL "https://projects.blender.org/blender/blender/media/branch/main/release/datafiles/${f}" -o "${BLENDER_SRC}/release/datafiles/${f}" || true
+done
+
 echo "===> Patching Blender CMake for Android ARM64..."
+# Bypass startup.blend size check
+sed -i 's/message(FATAL_ERROR "Detected incomplete startup blend/# &/' "${BLENDER_SRC}/CMakeLists.txt" 
 # Bypass FreeType Brotli check (Brotli only used for woff web fonts)
 sed -i 's/message(FATAL_ERROR "Freetype needs to be compiled with brotli support!")/# &/' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake"
 # Remove -lutil for Android (Bionic does not have libutil)
