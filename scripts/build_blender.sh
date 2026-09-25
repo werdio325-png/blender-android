@@ -229,6 +229,9 @@ cmake -B "${HOST_TOOLS_DIR}" -S "${BLENDER_SRC}" -G Ninja \
     -DWITH_FRIBIDI=OFF \
     -DWITH_GMP=OFF \
     -DWITH_PUGIXML=OFF \
+    -DWITH_SYSTEM_FREETYPE=ON \
+    -DHAVE_BROTLI=TRUE \
+    -DHAVE_BROTLI_INC="/usr/include/freetype2" \
     -DWITH_SYSTEM_EIGEN3=ON
 
 ninja -C "${HOST_TOOLS_DIR}" datatoc shader_tool makesdna makesrna
