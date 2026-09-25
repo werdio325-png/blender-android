@@ -132,6 +132,14 @@ if [ -f "${BLENDER_SRC}/source/blender/blenlib/BLI_subprocess.hh" ]; then
     sed -i 's/#if defined(_WIN32) || defined(__linux__)/#if (defined(_WIN32) || defined(__linux__)) \&\& !defined(__ANDROID__)/' "${BLENDER_SRC}/source/blender/blenlib/BLI_subprocess.hh"
 fi
 
+# Disable execinfo backtrace in system.cc on Android (Bionic lacks backtrace/backtrace_symbols)
+if [ -f "${BLENDER_SRC}/source/blender/blenlib/intern/system.cc" ]; then
+    sed -i 's/defined(HAVE_EXECINFO_H)/defined(HAVE_EXECINFO_H) \&\& !defined(__ANDROID__)/g' "${BLENDER_SRC}/source/blender/blenlib/intern/system.cc"
+fi
+if [ -f "${BLENDER_SRC}/source/blender/blenlib/CMakeLists.txt" ]; then
+    sed -i 's/if(HAVE_EXECINFO_H)/if(HAVE_EXECINFO_H AND NOT ANDROID)/g' "${BLENDER_SRC}/source/blender/blenlib/CMakeLists.txt"
+fi
+
 echo "===> Patching Blender CMake for native host code generators and dependencies..."
 python3 -c '
 import os
@@ -454,6 +462,7 @@ cmake -B build-blender -S blender -G Ninja \
     -DWITH_AUDASPACE=OFF \
     -DWITH_SYSTEM_AUDASPACE=OFF \
     -DWITH_INTERNATIONAL=OFF \
+    -DHAVE_EXECINFO_H=OFF \
     -DWITH_BUILDINFO=OFF
 
 echo "===> Building Blender core..."
