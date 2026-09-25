@@ -71,6 +71,8 @@ sed -i 's/message(FATAL_ERROR "Freetype needs to be compiled with brotli support
 sed -i 's/add_executable(blender ${EXETYPE} ${SRC})/add_library(blender SHARED ${SRC})/' "${BLENDER_SRC}/source/creator/CMakeLists.txt"
 # Bypass oiiotool check for cross-compilation
 sed -i 's/get_target_property(OPENIMAGEIO_TOOL OpenImageIO::oiiotool LOCATION)/# &/' "${BLENDER_SRC}/build_files/cmake/platform/dependency_targets.cmake"
+# Disable TBB malloc proxy checks in platform_unix.cmake
+sed -i 's/if(WITH_TBB_MALLOC_PROXY)/if(FALSE)/' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake"
 
 echo "===> Ensuring sse2neon header..."
 mkdir -p "${SYSROOT_DIR}/usr/include/sse2neon"
@@ -131,6 +133,7 @@ cmake -B build-blender -S blender -G Ninja \
     -DTBB_DIR="${TBB_DIR}" \
     -DTBB_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
     -DTBB_LIBRARY="${SYSROOT_DIR}/usr/lib/libtbb.so" \
+    -DWITH_TBB_MALLOC_PROXY=OFF \
     -DFREETYPE_INCLUDE_DIRS="${SYSROOT_DIR}/usr/include/freetype2" \
     -DFREETYPE_LIBRARY="${SYSROOT_DIR}/usr/lib/libfreetype.so" \
     -DJPEG_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
