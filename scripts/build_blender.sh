@@ -59,16 +59,18 @@ export PKG_CONFIG_PATH="${SYSROOT_DIR}/usr/lib/pkgconfig:${SYSROOT_DIR}/usr/shar
 echo "===> Cloning Blender source (v5.2.0)..."
 mkdir -p "${BUILD_TMP}"
 cd "${BUILD_TMP}"
-if [ ! -d "blender" ]; then
+export GIT_LFS_SKIP_SMUDGE=1
+if [ ! -d "blender/build_files" ]; then
+    rm -rf blender
     git config --global http.version HTTP/1.1 2>/dev/null || true
     for attempt in 1 2 3; do
         echo "Cloning Blender source (attempt $attempt)..."
+        rm -rf blender
         if git clone --depth 1 --branch v5.2.0 https://github.com/blender/blender.git blender; then
             break
         elif git clone --depth 1 --branch v5.2.0 https://projects.blender.org/blender/blender.git blender; then
             break
         fi
-        rm -rf blender
         sleep 5
     done
 fi
