@@ -8,6 +8,10 @@ on:
       - 'scripts/build_deps.sh'
       - '.github/workflows/build-apk.yml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-apk:
     runs-on: ubuntu-24.04

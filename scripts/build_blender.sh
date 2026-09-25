@@ -69,6 +69,8 @@ sed -i 's/message(FATAL_ERROR "Freetype needs to be compiled with brotli support
 
 # Build blender as a shared library for Android NativeActivity
 sed -i 's/add_executable(blender ${EXETYPE} ${SRC})/add_library(blender SHARED ${SRC})/' "${BLENDER_SRC}/source/creator/CMakeLists.txt"
+# Bypass oiiotool check for cross-compilation
+sed -i 's/get_target_property(OPENIMAGEIO_TOOL OpenImageIO::oiiotool LOCATION)/# &/' "${BLENDER_SRC}/build_files/cmake/platform/dependency_targets.cmake"
 
 echo "===> Ensuring sse2neon header..."
 mkdir -p "${SYSROOT_DIR}/usr/include/sse2neon"
@@ -86,6 +88,8 @@ IMATH_DIR=$(find "${SYSROOT_DIR}/usr" -name "ImathConfig.cmake" -exec dirname {}
 OPENEXR_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenEXRConfig.cmake" -exec dirname {} \; | head -n 1 || true)
 OCIO_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenColorIOConfig.cmake" -exec dirname {} \; | head -n 1 || true)
 OIIO_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenImageIOConfig.cmake" -exec dirname {} \; | head -n 1 || true)
+TBB_DIR=$(find "${SYSROOT_DIR}/usr" -name "TBBConfig.cmake" -exec dirname {} \; | head -n 1 || true)
+SDL3_DIR=$(find "${SYSROOT_DIR}/usr" -name "SDL3Config.cmake" -exec dirname {} \; | head -n 1 || true)
 PNG_LIB=$(find "${SYSROOT_DIR}/usr/lib" -name "libpng*.so" | head -n 1 || true)
 if [ -n "${PNG_LIB}" ]; then
     cp -P "${PNG_LIB}" "${SYSROOT_DIR}/usr/lib/libpng.so" 2>/dev/null || true
@@ -98,7 +102,9 @@ cmake -B build-blender -S blender -G Ninja \
     -DANDROID_ABI=arm64-v8a \
     -DANDROID_PLATFORM=android-${API_LEVEL} \
     -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr" \
+    -DCMAKE_FIND_ROOT_PATH="${SYSROOT_DIR}/usr;${TOOLCHAIN}/sysroot" \
     -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version" \
+    -DCMAKE_EXE_LINKER_FLAGS="-Wl,--undefined-version" \
     -DWITH_VULKAN_BACKEND=ON \
     -DVulkan_INCLUDE_DIRS="${TOOLCHAIN}/sysroot/usr/include" \
     -DVulkan_LIBRARIES="${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL}/libvulkan.so" \
@@ -110,6 +116,7 @@ cmake -B build-blender -S blender -G Ninja \
     -DWITH_SDL=ON \
     -DSDL_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
     -DSDL_LIBRARY="${SYSROOT_DIR}/usr/lib/libSDL3.so" \
+    -DSDL3_DIR="${SDL3_DIR}" \
     -DWITH_GHOST_X11=OFF \
     -DWITH_GHOST_WAYLAND=OFF \
     -DWITH_X11=OFF \
@@ -121,6 +128,7 @@ cmake -B build-blender -S blender -G Ninja \
     -DWITH_PYTHON=ON \
     -DPYTHON_INCLUDE_DIR="${SYSROOT_DIR}/usr/include/python3.12" \
     -DPYTHON_LIBRARY="${SYSROOT_DIR}/usr/lib/libpython3.12.so" \
+    -DTBB_DIR="${TBB_DIR}" \
     -DTBB_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
     -DTBB_LIBRARY="${SYSROOT_DIR}/usr/lib/libtbb.so" \
     -DFREETYPE_INCLUDE_DIRS="${SYSROOT_DIR}/usr/include/freetype2" \
@@ -187,6 +195,13 @@ if [ -f "build-blender/bin/blender" ]; then
     cp build-blender/bin/blender "${APK_DIR}/lib/arm64-v8a/libmain.so"
 elif [ -f "build-blender/bin/libblender.so" ]; then
     cp build-blender/bin/libblender.so "${APK_DIR}/lib/arm64-v8a/libmain.so"
+elif [ -f "build-blender/lib/libblender.so" ]; then
+    cp build-blender/lib/libblender.so "${APK_DIR}/lib/arm64-v8a/libmain.so"
+else
+    MAIN_LIB=$(find build-blender -name "libblender.so" -o -name "blender" | head -n 1)
+    if [ -n "${MAIN_LIB}" ]; then
+        cp "${MAIN_LIB}" "${APK_DIR}/lib/arm64-v8a/libmain.so"
+    fi
 fi
 
 # Copy assets
