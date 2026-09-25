@@ -70,6 +70,14 @@ sed -i 's/message(FATAL_ERROR "Freetype needs to be compiled with brotli support
 # Build blender as a shared library for Android NativeActivity
 sed -i 's/add_executable(blender ${EXETYPE} ${SRC})/add_library(blender SHARED ${SRC})/' "${BLENDER_SRC}/source/creator/CMakeLists.txt"
 
+echo "===> Ensuring sse2neon header..."
+mkdir -p "${SYSROOT_DIR}/usr/include/sse2neon"
+if [ -f "${SYSROOT_DIR}/usr/include/sse2neon.h" ]; then
+    cp -f "${SYSROOT_DIR}/usr/include/sse2neon.h" "${SYSROOT_DIR}/usr/include/sse2neon/" 2>/dev/null || true
+fi
+export SSE2NEON_ROOT_DIR="${SYSROOT_DIR}/usr"
+export SSE2NEON_INCLUDE_DIR="${SYSROOT_DIR}/usr/include"
+
 echo "===> Resolving dependency CMake directories..."
 if [ -d "${SYSROOT_DIR}/usr/lib64" ]; then
     cp -r "${SYSROOT_DIR}/usr/lib64/"* "${SYSROOT_DIR}/usr/lib/" || true
@@ -131,6 +139,8 @@ cmake -B build-blender -S blender -G Ninja \
     -DOpenEXR_DIR="${OPENEXR_DIR}" \
     -DOpenColorIO_DIR="${OCIO_DIR}" \
     -DOpenImageIO_DIR="${OIIO_DIR}" \
+    -DSSE2NEON_ROOT_DIR="${SYSROOT_DIR}/usr" \
+    -DSSE2NEON_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
     -DWITH_GMP=OFF \
     -DWITH_MANIFOLD=OFF \
     -DWITH_BOOST=OFF \
