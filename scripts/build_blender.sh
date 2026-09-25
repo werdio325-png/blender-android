@@ -148,6 +148,11 @@ if [ -f "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextEGL.cc" ]; then
     sed -i 's/initClearGL();/#ifdef WITH_OPENGL_BACKEND\n    initClearGL();\n#endif/' "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextEGL.cc"
 fi
 
+# Guard fftw3.h in ocean_intern.h for Android
+if [ -f "${BLENDER_SRC}/source/blender/blenkernel/intern/ocean_intern.h" ]; then
+    sed -i 's/#  include "fftw3.h"/#  if defined(WITH_OCEANSIM) \&\& !defined(__ANDROID__)\n#    include "fftw3.h"\n#  endif/' "${BLENDER_SRC}/source/blender/blenkernel/intern/ocean_intern.h"
+fi
+
 echo "===> Patching Blender CMake for native host code generators and dependencies..."
 python3 -c '
 import os
@@ -374,6 +379,9 @@ cmake -B "${HOST_TOOLS_DIR}" -S "${BLENDER_SRC}" -G Ninja \
     -DWITH_PUGIXML=OFF \
     -DWITH_LIBMV=OFF \
     -DWITH_MESHOPTIMIZER=OFF \
+    -DWITH_FFTW3=OFF \
+    -DWITH_MOD_OCEANSIM=OFF \
+    -DWITH_MOD_FLUID=OFF \
     -DWITH_SYSTEM_FREETYPE=ON \
     -DHAVE_BROTLI=TRUE \
     -DHAVE_BROTLI_INC="/usr/include/freetype2" \
@@ -481,6 +489,9 @@ cmake -B build-blender -S blender -G Ninja \
     -DWITH_SYSTEM_AUDASPACE=OFF \
     -DWITH_INTERNATIONAL=OFF \
     -DHAVE_EXECINFO_H=OFF \
+    -DWITH_FFTW3=OFF \
+    -DWITH_MOD_OCEANSIM=OFF \
+    -DWITH_MOD_FLUID=OFF \
     -DWITH_BUILDINFO=OFF
 
 echo "===> Building Blender core..."
