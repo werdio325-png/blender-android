@@ -260,13 +260,14 @@ cmake -B build-ocio -S OpenColorIO -G Ninja \
     -DANDROID_PLATFORM=android-${API_LEVEL} \
     -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
     -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version" \
     -DBUILD_SHARED_LIBS=ON \
     -DOCIO_BUILD_APPS=OFF \
     -DOCIO_BUILD_TESTS=OFF \
     -DOCIO_BUILD_GPU_TESTS=OFF \
     -DOCIO_BUILD_PYTHON=OFF \
     -DOCIO_BUILD_DOCS=OFF \
-    -DOCIO_INSTALL_EXT_PACKAGES=ALL
+    -DOCIO_INSTALL_EXT_PACKAGES=MISSING
 ninja -C build-ocio install
 
 echo "===> Building OpenImageIO..."
@@ -280,6 +281,7 @@ cmake -B build-oiio -S OpenImageIO -G Ninja \
     -DANDROID_PLATFORM=android-${API_LEVEL} \
     -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
     -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version" \
     -DBUILD_SHARED_LIBS=ON \
     -DOIIO_BUILD_TESTS=OFF \
     -DOIIO_BUILD_TOOLS=OFF \
