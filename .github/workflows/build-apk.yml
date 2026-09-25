@@ -20,9 +20,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build git wget tar zip unzip openjdk-17-jdk meson pkg-config libeigen3-dev
 
-      - name: Cache Android Dependencies Sysroot
+      - name: Restore Android Dependencies Sysroot
         id: cache-deps
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: sysroot-android-arm64
           key: ${{ runner.os }}-android-deps-${{ hashFiles('scripts/build_deps.sh') }}
@@ -32,6 +32,13 @@ jobs:
         run: |
           chmod +x scripts/build_deps.sh
           ./scripts/build_deps.sh
+
+      - name: Save Android Dependencies Sysroot Immediately
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: sysroot-android-arm64
+          key: ${{ runner.os }}-android-deps-${{ hashFiles('scripts/build_deps.sh') }}
 
       - name: Build Blender 5.2 and Assemble APK
         run: |
