@@ -140,6 +140,14 @@ if [ -f "${BLENDER_SRC}/source/blender/blenlib/CMakeLists.txt" ]; then
     sed -i 's/if(HAVE_EXECINFO_H)/if(HAVE_EXECINFO_H AND NOT ANDROID)/g' "${BLENDER_SRC}/source/blender/blenlib/CMakeLists.txt"
 fi
 
+# Guard initClearGL in GHOST_ContextSDL and GHOST_ContextEGL with WITH_OPENGL_BACKEND
+if [ -f "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextSDL.cc" ]; then
+    sed -i 's/initClearGL();/#ifdef WITH_OPENGL_BACKEND\n    initClearGL();\n#endif/' "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextSDL.cc"
+fi
+if [ -f "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextEGL.cc" ]; then
+    sed -i 's/initClearGL();/#ifdef WITH_OPENGL_BACKEND\n    initClearGL();\n#endif/' "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextEGL.cc"
+fi
+
 echo "===> Patching Blender CMake for native host code generators and dependencies..."
 python3 -c '
 import os
