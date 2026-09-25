@@ -288,6 +288,16 @@ fi
 export SSE2NEON_ROOT_DIR="${SYSROOT_DIR}/usr"
 export SSE2NEON_INCLUDE_DIR="${SYSROOT_DIR}/usr/include"
 
+echo "===> Ensuring modern Vulkan-Headers (1.3.296+) for Android NDK and sysroot..."
+VK_DIR="${BUILD_TMP}/vulkan-headers"
+mkdir -p "${VK_DIR}"
+wget -qO- "https://codeload.github.com/KhronosGroup/Vulkan-Headers/tar.gz/refs/tags/vulkan-sdk-1.3.296.0" | tar -xz -C "${VK_DIR}" --strip-components=1
+mkdir -p "${SYSROOT_DIR}/usr/include" "${TOOLCHAIN}/sysroot/usr/include"
+cp -r "${VK_DIR}/include/vulkan" "${SYSROOT_DIR}/usr/include/"
+cp -r "${VK_DIR}/include/vulkan" "${TOOLCHAIN}/sysroot/usr/include/"
+cp -r "${VK_DIR}/include/vk_video" "${SYSROOT_DIR}/usr/include/" 2>/dev/null || true
+cp -r "${VK_DIR}/include/vk_video" "${TOOLCHAIN}/sysroot/usr/include/" 2>/dev/null || true
+
 echo "===> Detecting C/C++ compiler for native host tools (GCC >= 14 or Clang >= 17)..."
 HOST_CC=""
 HOST_CXX=""
