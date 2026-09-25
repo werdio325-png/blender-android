@@ -78,6 +78,82 @@ sed -i 's/get_target_property(OPENIMAGEIO_TOOL OpenImageIO::oiiotool LOCATION)/#
 # Disable TBB malloc proxy checks in platform_unix.cmake
 sed -i 's/if(WITH_TBB_MALLOC_PROXY)/if(FALSE)/' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake"
 
+echo "===> Patching Blender CMake for native host code generators..."
+python3 -c '
+import os
+
+# 1. datatoc
+p = "'"${BLENDER_SRC}"'/source/blender/datatoc/CMakeLists.txt"
+if os.path.exists(p):
+    with open(p, "r") as f:
+        c = f.read()
+    if "WITH_CROSSCOMPILED_TOOLS" not in c:
+        c = c.replace("add_executable(datatoc ${SRC})\noptimize_debug_target(datatoc)",
+                      "if(NOT WITH_CROSSCOMPILED_TOOLS)\n  add_executable(datatoc ${SRC})\n  optimize_debug_target(datatoc)\nendif()")
+        with open(p, "w") as f:
+            f.write(c)
+
+# 2. shader_tool
+p = "'"${BLENDER_SRC}"'/source/blender/gpu/shader_tool/CMakeLists.txt"
+if os.path.exists(p):
+    with open(p, "r") as f:
+        c = f.read()
+    if "WITH_CROSSCOMPILED_TOOLS" not in c:
+        c = c.replace("add_executable(shader_tool shader_tool.cc ${SRC})\nblender_target_include_dirs(shader_tool ${INC})\n\noptimize_debug_target(shader_tool)",
+                      "if(NOT WITH_CROSSCOMPILED_TOOLS)\n  add_executable(shader_tool shader_tool.cc ${SRC})\n  blender_target_include_dirs(shader_tool ${INC})\n  optimize_debug_target(shader_tool)\nendif()")
+        with open(p, "w") as f:
+            f.write(c)
+
+# 3. makesdna
+p = "'"${BLENDER_SRC}"'/source/blender/makesdna/intern/CMakeLists.txt"
+if os.path.exists(p):
+    with open(p, "r") as f:
+        c = f.read()
+    if "WITH_CROSSCOMPILED_TOOLS" not in c:
+        c = c.replace("add_executable(makesdna ${SRC} ${SRC_DNA_INC})",
+                      "if(NOT WITH_CROSSCOMPILED_TOOLS)\n  add_executable(makesdna ${SRC} ${SRC_DNA_INC})")
+        c = c.replace("target_link_libraries(makesdna PRIVATE bf::dependencies::pthreads)",
+                      "target_link_libraries(makesdna PRIVATE bf::dependencies::pthreads)\nendif()")
+        with open(p, "w") as f:
+            f.write(c)
+
+# 4. makesrna
+p = "'"${BLENDER_SRC}"'/source/blender/makesrna/intern/CMakeLists.txt"
+if os.path.exists(p):
+    with open(p, "r") as f:
+        c = f.read()
+    if "WITH_CROSSCOMPILED_TOOLS" not in c:
+        c = c.replace("add_executable(makesrna ${SRC} ${SRC_RNA_INC} ${SRC_DNA_INC})",
+                      "if(NOT WITH_CROSSCOMPILED_TOOLS)\n  add_executable(makesrna ${SRC} ${SRC_RNA_INC} ${SRC_DNA_INC})")
+        c = c.replace("target_link_libraries(makesrna PRIVATE bf::dependencies::fmt)",
+                      "target_link_libraries(makesrna PRIVATE bf::dependencies::fmt)\nendif()")
+        with open(p, "w") as f:
+            f.write(c)
+
+# 5. platform_unix.cmake
+p = "'"${BLENDER_SRC}"'/build_files/cmake/platform/platform_unix.cmake"
+if os.path.exists(p):
+    with open(p, "r") as f:
+        c = f.read()
+    if "WITH_CROSSCOMPILED_TOOLS" not in c:
+        c += """
+if(WITH_CROSSCOMPILED_TOOLS)
+  message(STATUS "Importing cross-compiled host tools from: ${CROSSCOMPILE_TOOLDIR}")
+  foreach(_tool datatoc shader_tool makesdna makesrna)
+    if(EXISTS "${CROSSCOMPILE_TOOLDIR}/${_tool}")
+      add_executable(${_tool} IMPORTED GLOBAL)
+      set_property(TARGET ${_tool} PROPERTY IMPORTED_LOCATION "${CROSSCOMPILE_TOOLDIR}/${_tool}")
+      message(STATUS "  Imported host tool: ${_tool} -> ${CROSSCOMPILE_TOOLDIR}/${_tool}")
+    else()
+      message(FATAL_ERROR "Host tool ${_tool} not found at ${CROSSCOMPILE_TOOLDIR}/${_tool}")
+    endif()
+  endforeach()
+endif()
+"""
+        with open(p, "w") as f:
+            f.write(c)
+'
+
 echo "===> Ensuring OpenImageIO namespace compatibility for Blender..."
 if [ -f "${SYSROOT_DIR}/usr/include/OpenImageIO/oiioversion.h" ]; then
     sed -i 's/namespace OIIO = \([a-zA-Z0-9_]*\);/&\nnamespace OpenImageIO = \1;/' "${SYSROOT_DIR}/usr/include/OpenImageIO/oiioversion.h"
@@ -98,19 +174,46 @@ fi
 export SSE2NEON_ROOT_DIR="${SYSROOT_DIR}/usr"
 export SSE2NEON_INCLUDE_DIR="${SYSROOT_DIR}/usr/include"
 
-echo "===> Setting up Android Bionic environment for QEMU host tools..."
-if [ -f "${BASE_DIR}/bionic-arm64.tar.gz" ]; then
-    sudo tar -xzf "${BASE_DIR}/bionic-arm64.tar.gz" -C /
-fi
-if [ -d /system/lib64 ]; then
-    sudo cp -P ${SYSROOT_DIR}/usr/lib/*.so* /system/lib64/ 2>/dev/null || true
-    sudo cp -P ${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/*.so /system/lib64/ 2>/dev/null || true
-    sudo cp -P ${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL}/*.so /system/lib64/ 2>/dev/null || true
-fi
-sudo chmod -R 755 /system 2>/dev/null || true
-export QEMU_LD_PREFIX="/"
-export LD_LIBRARY_PATH="/system/lib64:${SYSROOT_DIR}/usr/lib:${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL}:${LD_LIBRARY_PATH:-}"
-export QEMU_SET_ENV="LD_LIBRARY_PATH=/system/lib64:${SYSROOT_DIR}/usr/lib:${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL}"
+echo "===> Building native host code generators (datatoc, shader_tool, makesdna, makesrna)..."
+HOST_TOOLS_DIR="${BUILD_TMP}/build-host-tools"
+mkdir -p "${HOST_TOOLS_DIR}"
+cmake -B "${HOST_TOOLS_DIR}" -S "${BLENDER_SRC}" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DWITH_CROSSCOMPILED_TOOLS=OFF \
+    -DWITH_HEADLESS=ON \
+    -DWITH_CYCLES=OFF \
+    -DWITH_AUDASPACE=OFF \
+    -DWITH_PYTHON=OFF \
+    -DWITH_INTERNATIONAL=OFF \
+    -DWITH_OPENIMAGEIO=OFF \
+    -DWITH_OPENCOLORIO=OFF \
+    -DWITH_OPENEXR=OFF \
+    -DWITH_OPENVDB=OFF \
+    -DWITH_ALEMBIC=OFF \
+    -DWITH_USD=OFF \
+    -DWITH_DRACO=OFF \
+    -DWITH_MATERIALX=OFF \
+    -DWITH_VULKAN_BACKEND=OFF \
+    -DWITH_OPENGL_BACKEND=OFF \
+    -DWITH_SDL=OFF \
+    -DWITH_GHOST_SDL=OFF \
+    -DWITH_GHOST_X11=OFF \
+    -DWITH_GHOST_WAYLAND=OFF \
+    -DWITH_TBB=OFF \
+    -DWITH_OPENMP=OFF \
+    -DWITH_LLVM=OFF \
+    -DWITH_FFMPEG=OFF \
+    -DWITH_IMAGE_OPENJPEG=OFF \
+    -DWITH_IMAGE_TIFF=OFF \
+    -DWITH_HARFBUZZ=OFF \
+    -DWITH_FREETYPE=OFF \
+    -DWITH_FRIBIDI=OFF \
+    -DWITH_GMP=OFF \
+    -DWITH_PUGIXML=OFF \
+    -DWITH_SYSTEM_EIGEN3=ON
+
+ninja -C "${HOST_TOOLS_DIR}" datatoc shader_tool makesdna makesrna
+ls -la "${HOST_TOOLS_DIR}/bin"
 
 echo "===> Resolving dependency CMake directories..."
 if [ -d "${SYSROOT_DIR}/usr/lib64" ]; then
@@ -135,6 +238,8 @@ cmake -B build-blender -S blender -G Ninja \
     -DANDROID_PLATFORM=android-${API_LEVEL} \
     -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr" \
     -DCMAKE_FIND_ROOT_PATH="${SYSROOT_DIR}/usr;${TOOLCHAIN}/sysroot" \
+    -DWITH_CROSSCOMPILED_TOOLS=ON \
+    -DCROSSCOMPILE_TOOLDIR="${HOST_TOOLS_DIR}/bin" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DWITH_INSTALL_PORTABLE=OFF \
     -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version" \
