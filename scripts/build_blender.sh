@@ -74,6 +74,21 @@ sed -i 's/get_target_property(OPENIMAGEIO_TOOL OpenImageIO::oiiotool LOCATION)/#
 # Disable TBB malloc proxy checks in platform_unix.cmake
 sed -i 's/if(WITH_TBB_MALLOC_PROXY)/if(FALSE)/' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake"
 
+echo "===> Ensuring OpenImageIO namespace compatibility for Blender..."
+if [ -f "${SYSROOT_DIR}/usr/include/OpenImageIO/oiioversion.h" ]; then
+    if ! grep -q "namespace OpenImageIO = " "${SYSROOT_DIR}/usr/include/OpenImageIO/oiioversion.h"; then
+        sed -i '/namespace OIIO = /a namespace OpenImageIO = OIIO;' "${SYSROOT_DIR}/usr/include/OpenImageIO/oiioversion.h"
+    fi
+fi
+if [ -f "${SYSROOT_DIR}/usr/include/OpenImageIO/ustring.h" ]; then
+    if ! grep -q "namespace OpenImageIO = " "${SYSROOT_DIR}/usr/include/OpenImageIO/ustring.h"; then
+        sed -i '/#define OPENIMAGEIO_USTRING_H/a namespace OpenImageIO = OIIO;' "${SYSROOT_DIR}/usr/include/OpenImageIO/ustring.h"
+    fi
+fi
+if [ -f "${BLENDER_SRC}/source/blender/blenlib/BLI_ustring.hh" ]; then
+    sed -i 's/#include <OpenImageIO\/ustring.h>/#include <OpenImageIO\/ustring.h>\nnamespace OpenImageIO = OIIO;/' "${BLENDER_SRC}/source/blender/blenlib/BLI_ustring.hh"
+fi
+
 echo "===> Ensuring sse2neon header..."
 mkdir -p "${SYSROOT_DIR}/usr/include/sse2neon"
 if [ -f "${SYSROOT_DIR}/usr/include/sse2neon.h" ]; then
@@ -81,6 +96,11 @@ if [ -f "${SYSROOT_DIR}/usr/include/sse2neon.h" ]; then
 fi
 export SSE2NEON_ROOT_DIR="${SYSROOT_DIR}/usr"
 export SSE2NEON_INCLUDE_DIR="${SYSROOT_DIR}/usr/include"
+
+# Configure QEMU execution environment for cross-compiled host generators (makesdna, makesrna)
+export QEMU_LD_PREFIX="${TOOLCHAIN}/sysroot"
+export LD_LIBRARY_PATH="${SYSROOT_DIR}/usr/lib:${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL}:${LD_LIBRARY_PATH:-}"
+export QEMU_SET_ENV="LD_LIBRARY_PATH=${SYSROOT_DIR}/usr/lib:${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL}"
 
 echo "===> Resolving dependency CMake directories..."
 if [ -d "${SYSROOT_DIR}/usr/lib64" ]; then
