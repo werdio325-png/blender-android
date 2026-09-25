@@ -70,6 +70,15 @@ sed -i 's/message(FATAL_ERROR "Freetype needs to be compiled with brotli support
 # Build blender as a shared library for Android NativeActivity
 sed -i 's/add_executable(blender ${EXETYPE} ${SRC})/add_library(blender SHARED ${SRC})/' "${BLENDER_SRC}/source/creator/CMakeLists.txt"
 
+echo "===> Resolving dependency CMake directories..."
+if [ -d "${SYSROOT_DIR}/usr/lib64" ]; then
+    cp -r "${SYSROOT_DIR}/usr/lib64/"* "${SYSROOT_DIR}/usr/lib/" || true
+fi
+IMATH_DIR=$(find "${SYSROOT_DIR}/usr" -name "ImathConfig.cmake" -exec dirname {} \; | head -n 1 || true)
+OPENEXR_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenEXRConfig.cmake" -exec dirname {} \; | head -n 1 || true)
+OCIO_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenColorIOConfig.cmake" -exec dirname {} \; | head -n 1 || true)
+OIIO_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenImageIOConfig.cmake" -exec dirname {} \; | head -n 1 || true)
+
 echo "===> Configuring Blender for Android ARM64..."
 cmake -B build-blender -S blender -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
@@ -113,10 +122,10 @@ cmake -B build-blender -S blender -G Ninja \
     -DEPOXY_LIBRARY="${SYSROOT_DIR}/usr/lib/libepoxy.so" \
     -Dfmt_DIR="${SYSROOT_DIR}/usr/lib/cmake/fmt" \
     -DEigen3_DIR="${SYSROOT_DIR}/usr/lib/cmake/eigen3" \
-    -DImath_DIR="${SYSROOT_DIR}/usr/lib/cmake/Imath" \
-    -DOpenEXR_DIR="${SYSROOT_DIR}/usr/lib/cmake/OpenEXR" \
-    -DOpenColorIO_DIR="${SYSROOT_DIR}/usr/lib/cmake/OpenColorIO" \
-    -DOpenImageIO_DIR="${SYSROOT_DIR}/usr/lib/cmake/OpenImageIO" \
+    -DImath_DIR="${IMATH_DIR}" \
+    -DOpenEXR_DIR="${OPENEXR_DIR}" \
+    -DOpenColorIO_DIR="${OCIO_DIR}" \
+    -DOpenImageIO_DIR="${OIIO_DIR}" \
     -DWITH_GMP=OFF \
     -DWITH_MANIFOLD=OFF \
     -DWITH_BOOST=OFF \
