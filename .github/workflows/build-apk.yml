@@ -26,7 +26,7 @@ jobs:
           sudo apt-get install -y cmake ninja-build git wget tar zip unzip openjdk-17-jdk meson pkg-config libeigen3-dev qemu-user-static binfmt-support
           if [ -f bionic-arm64.tar.gz ]; then
             sudo tar -xzf bionic-arm64.tar.gz -C /
-            sudo chmod 755 /system/bin/linker64
+            sudo chmod -R 755 /system
           fi
 
       - name: Restore Android Dependencies Sysroot

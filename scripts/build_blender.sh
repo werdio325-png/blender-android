@@ -99,11 +99,11 @@ export SSE2NEON_INCLUDE_DIR="${SYSROOT_DIR}/usr/include"
 echo "===> Setting up Android Bionic environment for QEMU host tools..."
 if [ -f "${BASE_DIR}/bionic-arm64.tar.gz" ]; then
     sudo tar -xzf "${BASE_DIR}/bionic-arm64.tar.gz" -C /
-    sudo chmod 755 /system/bin/linker64
 fi
 if [ -d /system/lib64 ]; then
     sudo cp -P ${SYSROOT_DIR}/usr/lib/*.so* /system/lib64/ 2>/dev/null || true
 fi
+sudo chmod -R 755 /system 2>/dev/null || true
 export QEMU_LD_PREFIX="/"
 export LD_LIBRARY_PATH="/system/lib64:${SYSROOT_DIR}/usr/lib:${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL}:${LD_LIBRARY_PATH:-}"
 export QEMU_SET_ENV="LD_LIBRARY_PATH=/system/lib64:${SYSROOT_DIR}/usr/lib:${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL}"
