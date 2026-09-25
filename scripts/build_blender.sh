@@ -78,6 +78,11 @@ IMATH_DIR=$(find "${SYSROOT_DIR}/usr" -name "ImathConfig.cmake" -exec dirname {}
 OPENEXR_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenEXRConfig.cmake" -exec dirname {} \; | head -n 1 || true)
 OCIO_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenColorIOConfig.cmake" -exec dirname {} \; | head -n 1 || true)
 OIIO_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenImageIOConfig.cmake" -exec dirname {} \; | head -n 1 || true)
+PNG_LIB=$(find "${SYSROOT_DIR}/usr/lib" -name "libpng*.so" | head -n 1 || true)
+if [ -n "${PNG_LIB}" ]; then
+    cp -P "${PNG_LIB}" "${SYSROOT_DIR}/usr/lib/libpng.so" 2>/dev/null || true
+    cp -P "${PNG_LIB}" "${SYSROOT_DIR}/usr/lib/libpng16.so" 2>/dev/null || true
+fi
 
 echo "===> Configuring Blender for Android ARM64..."
 cmake -B build-blender -S blender -G Ninja \
@@ -115,7 +120,7 @@ cmake -B build-blender -S blender -G Ninja \
     -DJPEG_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
     -DJPEG_LIBRARY="${SYSROOT_DIR}/usr/lib/libjpeg.so" \
     -DPNG_PNG_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
-    -DPNG_LIBRARY="${SYSROOT_DIR}/usr/lib/libpng16.so" \
+    -DPNG_LIBRARY="${PNG_LIB}" \
     -DZSTD_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
     -DZSTD_LIBRARY="${SYSROOT_DIR}/usr/lib/libzstd.so" \
     -DEPOXY_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
