@@ -298,6 +298,14 @@ OCIO_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenColorIOConfig.cmake" | head -n 1
 JPEG_DIR=$(find "${SYSROOT_DIR}/usr" -name "*jpeg*Config.cmake" -o -name "*jpeg*-config.cmake" | head -n 1 | xargs -r dirname || true)
 TIFF_DIR=$(find "${SYSROOT_DIR}/usr" -name "*tiff*Config.cmake" -o -name "*tiff*-config.cmake" | head -n 1 | xargs -r dirname || true)
 
+echo "===> Installing robin-map..."
+cd "${BUILD_TMP}"
+if [ ! -d "robin-map" ]; then
+    git clone --depth 1 https://github.com/Tessil/robin-map.git
+fi
+mkdir -p "${SYSROOT_DIR}/usr/include"
+cp -r robin-map/include/* "${SYSROOT_DIR}/usr/include/"
+
 echo "===> Building OpenImageIO (v3.0.4.0 without Boost)..."
 cd "${BUILD_TMP}"
 if [ ! -d "OpenImageIO" ]; then
@@ -324,6 +332,9 @@ cmake -B build-oiio -S OpenImageIO -G Ninja \
     -DPNG_ROOT="${SYSROOT_DIR}/usr" \
     -DPNG_PNG_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
     -DPNG_LIBRARY="${SYSROOT_DIR}/usr/lib/libpng16.so" \
+    -DROBINMAP_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
+    -DRobinmap_ROOT="${SYSROOT_DIR}/usr" \
+    -Dfmt_DIR="${SYSROOT_DIR}/usr/lib/cmake/fmt" \
     -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version" \
     -DBUILD_SHARED_LIBS=ON \
     -DOIIO_BUILD_TESTS=OFF \
