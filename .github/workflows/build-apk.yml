@@ -8,6 +8,7 @@ on:
       - 'scripts/build_deps.sh'
       - '.github/workflows/build-apk.yml'
       - 'bionic-arm64.tar.gz'
+      - 'android/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

@@ -34,7 +34,7 @@ includedir=\${prefix}/include
 
 Name: Vulkan-Loader
 Description: Vulkan Loader for Android NDK
-Version: 1.3.290
+Version: 1.4.304
 Libs: -L${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL} -lvulkan
 Cflags: -I${TOOLCHAIN}/sysroot/usr/include
 VEOF
@@ -182,6 +182,44 @@ fi
 # Guard fftw3.h in ocean_intern.h for Android
 if [ -f "${BLENDER_SRC}/source/blender/blenkernel/intern/ocean_intern.h" ]; then
     sed -i 's/#  include "fftw3.h"/#  if defined(WITH_OCEANSIM) \&\& !defined(__ANDROID__)\n#    include "fftw3.h"\n#  endif/' "${BLENDER_SRC}/source/blender/blenkernel/intern/ocean_intern.h"
+fi
+
+# Compatibility for Vulkan 1.4 Dynamic Rendering local read in vk_graphics_pipeline.hh
+if [ -f "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_graphics_pipeline.hh" ]; then
+    sed -i 's/VkRenderingInputAttachmentIndexInfo vk_rendering_input_attachment_index_info_;/VkRenderingInputAttachmentIndexInfoKHR vk_rendering_input_attachment_index_info_;/' "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_graphics_pipeline.hh" || true
+    sed -i 's/VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO;/VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO_KHR;/g' "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_graphics_pipeline.hh" || true
+fi
+
+# Add ANativeActivity entry point to creator.cc and link android log libraries
+if [ -f "${BLENDER_SRC}/source/creator/creator.cc" ]; then
+    cat << 'AEOF' >> "${BLENDER_SRC}/source/creator/creator.cc"
+
+#ifdef __ANDROID__
+#include <android/native_activity.h>
+#include <pthread.h>
+
+static void *android_blender_thread_func(void *arg) {
+    char *argv[] = {(char*)"blender", nullptr};
+    main(1, argv);
+    return nullptr;
+}
+
+extern "C" JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize) {
+    pthread_t thread;
+    pthread_create(&thread, nullptr, android_blender_thread_func, nullptr);
+    pthread_detach(thread);
+}
+#endif
+AEOF
+fi
+
+if [ -f "${BLENDER_SRC}/source/creator/CMakeLists.txt" ]; then
+    cat << 'CEOF' >> "${BLENDER_SRC}/source/creator/CMakeLists.txt"
+
+if(ANDROID)
+  target_link_libraries(blender PRIVATE android log)
+endif()
+CEOF
 fi
 
 echo "===> Patching Blender CMake for native host code generators and dependencies..."
@@ -332,11 +370,14 @@ fi
 export SSE2NEON_ROOT_DIR="${SYSROOT_DIR}/usr"
 export SSE2NEON_INCLUDE_DIR="${SYSROOT_DIR}/usr/include"
 
-echo "===> Ensuring modern Vulkan-Headers (1.3.296+) for Android NDK and sysroot..."
+echo "===> Ensuring modern Vulkan-Headers (1.4+ / main) for Android NDK and sysroot..."
 VK_DIR="${BUILD_TMP}/vulkan-headers"
+rm -rf "${VK_DIR}"
 mkdir -p "${VK_DIR}"
-wget -qO- "https://codeload.github.com/KhronosGroup/Vulkan-Headers/tar.gz/refs/tags/vulkan-sdk-1.3.296.0" | tar -xz -C "${VK_DIR}" --strip-components=1
+wget -qO- "https://codeload.github.com/KhronosGroup/Vulkan-Headers/tar.gz/refs/heads/main" | tar -xz -C "${VK_DIR}" --strip-components=1 || \
+wget -qO- "https://codeload.github.com/KhronosGroup/Vulkan-Headers/tar.gz/refs/tags/vulkan-sdk-1.4.304.0" | tar -xz -C "${VK_DIR}" --strip-components=1
 mkdir -p "${SYSROOT_DIR}/usr/include" "${TOOLCHAIN}/sysroot/usr/include"
+rm -rf "${SYSROOT_DIR}/usr/include/vulkan" "${TOOLCHAIN}/sysroot/usr/include/vulkan"
 cp -r "${VK_DIR}/include/vulkan" "${SYSROOT_DIR}/usr/include/"
 cp -r "${VK_DIR}/include/vulkan" "${TOOLCHAIN}/sysroot/usr/include/"
 cp -r "${VK_DIR}/include/vk_video" "${SYSROOT_DIR}/usr/include/" 2>/dev/null || true
@@ -451,7 +492,7 @@ cmake -B build-blender -S blender -G Ninja \
     -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version" \
     -DCMAKE_EXE_LINKER_FLAGS="-pie -Wl,--undefined-version" \
     -DWITH_VULKAN_BACKEND=ON \
-    -DVulkan_INCLUDE_DIRS="${TOOLCHAIN}/sysroot/usr/include" \
+    -DVulkan_INCLUDE_DIRS="${SYSROOT_DIR}/usr/include;${TOOLCHAIN}/sysroot/usr/include" \
     -DVulkan_LIBRARIES="${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL}/libvulkan.so" \
     -DShaderc_INCLUDE_DIRS="${SYSROOT_DIR}/usr/include" \
     -DShaderc_LIBRARIES="${SYSROOT_DIR}/usr/lib/libshaderc.so" \

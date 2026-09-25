@@ -14,7 +14,8 @@
 
     <application
         android:label="Blender"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@android:drawable/sym_def_app_icon"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
         android:hasCode="false"
         android:largeHeap="true"
         android:extractNativeLibs="true">
@@ -22,6 +23,7 @@
         <activity
             android:name="android.app.NativeActivity"
             android:label="Blender"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize|uiMode"
             android:screenOrientation="sensorLandscape"
             android:exported="true">
