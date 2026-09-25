@@ -288,6 +288,14 @@ cmake -B build-tiff -S libtiff -G Ninja \
     -Dtiff-docs=OFF
 ninja -C build-tiff install
 
+echo "===> Merging lib64 to lib if exists..."
+if [ -d "${SYSROOT_DIR}/usr/lib64" ]; then
+    cp -r "${SYSROOT_DIR}/usr/lib64/"* "${SYSROOT_DIR}/usr/lib/" || true
+fi
+IMATH_DIR=$(find "${SYSROOT_DIR}/usr" -name "ImathConfig.cmake" -exec dirname {} \; | head -n 1 || true)
+OPENEXR_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenEXRConfig.cmake" -exec dirname {} \; | head -n 1 || true)
+OCIO_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenColorIOConfig.cmake" -exec dirname {} \; | head -n 1 || true)
+
 echo "===> Building OpenImageIO (v3.0.4.0 without Boost)..."
 cd "${BUILD_TMP}"
 if [ ! -d "OpenImageIO" ]; then
@@ -298,7 +306,10 @@ cmake -B build-oiio -S OpenImageIO -G Ninja \
     -DANDROID_ABI=arm64-v8a \
     -DANDROID_PLATFORM=android-${API_LEVEL} \
     -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
-    -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr" \
+    -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr;${IMATH_DIR};${OPENEXR_DIR};${OCIO_DIR}" \
+    -DImath_DIR="${IMATH_DIR}" \
+    -DOpenEXR_DIR="${OPENEXR_DIR}" \
+    -DOpenColorIO_DIR="${OCIO_DIR}" \
     -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version" \
     -DBUILD_SHARED_LIBS=ON \
     -DOIIO_BUILD_TESTS=OFF \
