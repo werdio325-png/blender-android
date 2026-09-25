@@ -292,9 +292,11 @@ echo "===> Merging lib64 to lib if exists..."
 if [ -d "${SYSROOT_DIR}/usr/lib64" ]; then
     cp -r "${SYSROOT_DIR}/usr/lib64/"* "${SYSROOT_DIR}/usr/lib/" || true
 fi
-IMATH_DIR=$(find "${SYSROOT_DIR}/usr" -name "ImathConfig.cmake" -exec dirname {} \; | head -n 1 || true)
-OPENEXR_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenEXRConfig.cmake" -exec dirname {} \; | head -n 1 || true)
-OCIO_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenColorIOConfig.cmake" -exec dirname {} \; | head -n 1 || true)
+IMATH_DIR=$(find "${SYSROOT_DIR}/usr" -name "ImathConfig.cmake" | head -n 1 | xargs -r dirname || true)
+OPENEXR_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenEXRConfig.cmake" | head -n 1 | xargs -r dirname || true)
+OCIO_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenColorIOConfig.cmake" | head -n 1 | xargs -r dirname || true)
+JPEG_DIR=$(find "${SYSROOT_DIR}/usr" -name "*jpeg*Config.cmake" -o -name "*jpeg*-config.cmake" | head -n 1 | xargs -r dirname || true)
+TIFF_DIR=$(find "${SYSROOT_DIR}/usr" -name "*tiff*Config.cmake" -o -name "*tiff*-config.cmake" | head -n 1 | xargs -r dirname || true)
 
 echo "===> Building OpenImageIO (v3.0.4.0 without Boost)..."
 cd "${BUILD_TMP}"
@@ -306,10 +308,22 @@ cmake -B build-oiio -S OpenImageIO -G Ninja \
     -DANDROID_ABI=arm64-v8a \
     -DANDROID_PLATFORM=android-${API_LEVEL} \
     -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
-    -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr;${IMATH_DIR};${OPENEXR_DIR};${OCIO_DIR}" \
+    -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr;${IMATH_DIR};${OPENEXR_DIR};${OCIO_DIR};${JPEG_DIR};${TIFF_DIR}" \
     -DImath_DIR="${IMATH_DIR}" \
     -DOpenEXR_DIR="${OPENEXR_DIR}" \
     -DOpenColorIO_DIR="${OCIO_DIR}" \
+    -Dlibjpeg-turbo_DIR="${JPEG_DIR}" \
+    -Dlibjpeg-turbo_ROOT="${SYSROOT_DIR}/usr" \
+    -DJPEG_ROOT="${SYSROOT_DIR}/usr" \
+    -DJPEG_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
+    -DJPEG_LIBRARY="${SYSROOT_DIR}/usr/lib/libjpeg.so" \
+    -DTIFF_DIR="${TIFF_DIR}" \
+    -DTIFF_ROOT="${SYSROOT_DIR}/usr" \
+    -DTIFF_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
+    -DTIFF_LIBRARY="${SYSROOT_DIR}/usr/lib/libtiff.so" \
+    -DPNG_ROOT="${SYSROOT_DIR}/usr" \
+    -DPNG_PNG_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
+    -DPNG_LIBRARY="${SYSROOT_DIR}/usr/lib/libpng16.so" \
     -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version" \
     -DBUILD_SHARED_LIBS=ON \
     -DOIIO_BUILD_TESTS=OFF \
