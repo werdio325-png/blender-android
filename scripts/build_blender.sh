@@ -56,23 +56,44 @@ fi
 
 export PKG_CONFIG_PATH="${SYSROOT_DIR}/usr/lib/pkgconfig:${SYSROOT_DIR}/usr/share/pkgconfig:${PKG_CONFIG_PATH:-}"
 
+echo "===> Disabling Git LFS filters..."
+git lfs uninstall --system 2>/dev/null || true
+git lfs uninstall 2>/dev/null || true
+git config --global filter.lfs.smudge "cat" 2>/dev/null || true
+git config --global filter.lfs.clean "cat" 2>/dev/null || true
+git config --global filter.lfs.process "" 2>/dev/null || true
+git config --global filter.lfs.required false 2>/dev/null || true
+git config --global http.version HTTP/1.1 2>/dev/null || true
+git config --global http.postBuffer 524288000 2>/dev/null || true
+export GIT_LFS_SKIP_SMUDGE=1
+
 echo "===> Cloning Blender source (v5.2.0)..."
 mkdir -p "${BUILD_TMP}"
 cd "${BUILD_TMP}"
-export GIT_LFS_SKIP_SMUDGE=1
-if [ ! -d "blender/build_files" ]; then
+if [ ! -f "blender/build_files/cmake/platform/platform_unix.cmake" ]; then
     rm -rf blender
-    git config --global http.version HTTP/1.1 2>/dev/null || true
     for attempt in 1 2 3; do
         echo "Cloning Blender source (attempt $attempt)..."
         rm -rf blender
-        if git clone --depth 1 --branch v5.2.0 https://github.com/blender/blender.git blender; then
+        if git -c filter.lfs.smudge=cat -c filter.lfs.clean=cat -c filter.lfs.process= -c filter.lfs.required=false clone --depth 1 --branch v5.2.0 https://github.com/blender/blender.git blender; then
             break
-        elif git clone --depth 1 --branch v5.2.0 https://projects.blender.org/blender/blender.git blender; then
+        fi
+        rm -rf blender
+        if git -c filter.lfs.smudge=cat -c filter.lfs.clean=cat -c filter.lfs.process= -c filter.lfs.required=false clone --depth 1 --branch v5.2.0 https://projects.blender.org/blender/blender.git blender; then
             break
         fi
         sleep 5
     done
+fi
+
+if [ -d "blender/.git" ] && [ ! -f "blender/build_files/cmake/platform/platform_unix.cmake" ]; then
+    echo "Forcing checkout in blender repo..."
+    (cd blender && git -c filter.lfs.smudge=cat -c filter.lfs.clean=cat -c filter.lfs.process= -c filter.lfs.required=false checkout -f HEAD || true)
+fi
+
+if [ ! -f "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake" ]; then
+    echo "ERROR: Failed to clone and checkout Blender source code!"
+    exit 1
 fi
 
 echo "===> Patching Blender CMake for Android ARM64..."
@@ -90,63 +111,23 @@ sed -i 's/get_target_property(OPENIMAGEIO_TOOL OpenImageIO::oiiotool LOCATION)/#
 # Disable TBB malloc proxy checks in platform_unix.cmake
 sed -i 's/if(WITH_TBB_MALLOC_PROXY)/if(FALSE)/' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake"
 
-echo "===> Patching Blender CMake for native host code generators..."
+echo "===> Patching Blender CMake for native host code generators and dependencies..."
 python3 -c '
 import os
 
-# 1. datatoc
-p = "'"${BLENDER_SRC}"'/source/blender/datatoc/CMakeLists.txt"
-if os.path.exists(p):
-    with open(p, "r") as f:
-        c = f.read()
-    if "WITH_CROSSCOMPILED_TOOLS" not in c:
-        c = c.replace("add_executable(datatoc ${SRC})\noptimize_debug_target(datatoc)",
-                      "if(NOT WITH_CROSSCOMPILED_TOOLS)\n  add_executable(datatoc ${SRC})\n  optimize_debug_target(datatoc)\nendif()")
-        with open(p, "w") as f:
-            f.write(c)
+src = "'"${BLENDER_SRC}"'"
 
-# 2. shader_tool
-p = "'"${BLENDER_SRC}"'/source/blender/gpu/shader_tool/CMakeLists.txt"
-if os.path.exists(p):
-    with open(p, "r") as f:
+# 1. Wrap OpenEXR, OpenImageIO, OpenColorIO in platform_unix.cmake so host tools build does not fail
+p_unix = os.path.join(src, "build_files/cmake/platform/platform_unix.cmake")
+if os.path.exists(p_unix):
+    with open(p_unix, "r") as f:
         c = f.read()
-    if "WITH_CROSSCOMPILED_TOOLS" not in c:
-        c = c.replace("add_executable(shader_tool shader_tool.cc ${SRC})\nblender_target_include_dirs(shader_tool ${INC})\n\noptimize_debug_target(shader_tool)",
-                      "if(NOT WITH_CROSSCOMPILED_TOOLS)\n  add_executable(shader_tool shader_tool.cc ${SRC})\n  blender_target_include_dirs(shader_tool ${INC})\n  optimize_debug_target(shader_tool)\nendif()")
-        with open(p, "w") as f:
-            f.write(c)
-
-# 3. makesdna
-p = "'"${BLENDER_SRC}"'/source/blender/makesdna/intern/CMakeLists.txt"
-if os.path.exists(p):
-    with open(p, "r") as f:
-        c = f.read()
-    if "WITH_CROSSCOMPILED_TOOLS" not in c:
-        c = c.replace("add_executable(makesdna ${SRC} ${SRC_DNA_INC})",
-                      "if(NOT WITH_CROSSCOMPILED_TOOLS)\n  add_executable(makesdna ${SRC} ${SRC_DNA_INC})")
-        c = c.replace("target_link_libraries(makesdna PRIVATE bf::dependencies::pthreads)",
-                      "target_link_libraries(makesdna PRIVATE bf::dependencies::pthreads)\nendif()")
-        with open(p, "w") as f:
-            f.write(c)
-
-# 4. makesrna
-p = "'"${BLENDER_SRC}"'/source/blender/makesrna/intern/CMakeLists.txt"
-if os.path.exists(p):
-    with open(p, "r") as f:
-        c = f.read()
-    if "WITH_CROSSCOMPILED_TOOLS" not in c:
-        c = c.replace("add_executable(makesrna ${SRC} ${SRC_RNA_INC} ${SRC_DNA_INC})",
-                      "if(NOT WITH_CROSSCOMPILED_TOOLS)\n  add_executable(makesrna ${SRC} ${SRC_RNA_INC} ${SRC_DNA_INC})")
-        c = c.replace("target_link_libraries(makesrna PRIVATE bf::dependencies::fmt)",
-                      "target_link_libraries(makesrna PRIVATE bf::dependencies::fmt)\nendif()")
-        with open(p, "w") as f:
-            f.write(c)
-
-# 5. platform_unix.cmake
-p = "'"${BLENDER_SRC}"'/build_files/cmake/platform/platform_unix.cmake"
-if os.path.exists(p):
-    with open(p, "r") as f:
-        c = f.read()
+    if "if(WITH_OPENEXR)\n  find_package_wrapper(OpenEXR REQUIRED)" not in c:
+        c = c.replace("find_package_wrapper(OpenEXR REQUIRED)", "if(WITH_OPENEXR)\n  find_package_wrapper(OpenEXR REQUIRED)\nendif()")
+    if "if(WITH_OPENIMAGEIO)\n  find_package_wrapper(OpenImageIO REQUIRED)" not in c:
+        c = c.replace("find_package_wrapper(OpenImageIO REQUIRED)", "if(WITH_OPENIMAGEIO)\n  find_package_wrapper(OpenImageIO REQUIRED)\nendif()")
+    if "if(WITH_OPENCOLORIO)\n  find_package_wrapper(OpenColorIO 2.0.0 REQUIRED)" not in c:
+        c = c.replace("find_package_wrapper(OpenColorIO 2.0.0 REQUIRED)", "if(WITH_OPENCOLORIO)\n  find_package_wrapper(OpenColorIO 2.0.0 REQUIRED)\nendif()")
     if "WITH_CROSSCOMPILED_TOOLS" not in c:
         c += """
 if(WITH_CROSSCOMPILED_TOOLS)
@@ -162,6 +143,98 @@ if(WITH_CROSSCOMPILED_TOOLS)
   endforeach()
 endif()
 """
+    with open(p_unix, "w") as f:
+        f.write(c)
+
+# 2. dependency_targets.cmake: wrap OpenImageIO, OpenEXR, OpenColorIO aliases
+p_dep = os.path.join(src, "build_files/cmake/platform/dependency_targets.cmake")
+if os.path.exists(p_dep):
+    with open(p_dep, "r") as f:
+        c = f.read()
+    c = c.replace("add_library(bf::dependencies::openimageio ALIAS OpenImageIO::OpenImageIO)",
+"""if(TARGET OpenImageIO::OpenImageIO)
+  add_library(bf::dependencies::openimageio ALIAS OpenImageIO::OpenImageIO)
+else()
+  add_library(bf_deps_openimageio INTERFACE)
+  add_library(bf::dependencies::openimageio ALIAS bf_deps_openimageio)
+endif()""")
+    c = c.replace("get_target_property(OPENIMAGEIO_TOOL OpenImageIO::oiiotool LOCATION)",
+"""if(TARGET OpenImageIO::oiiotool)
+  get_target_property(OPENIMAGEIO_TOOL OpenImageIO::oiiotool LOCATION)
+endif()""")
+    c = c.replace("add_library(bf::dependencies::openexr ALIAS OpenEXR::OpenEXR)",
+"""if(TARGET OpenEXR::OpenEXR)
+  add_library(bf::dependencies::openexr ALIAS OpenEXR::OpenEXR)
+else()
+  add_library(bf_deps_openexr INTERFACE)
+  add_library(bf::dependencies::openexr ALIAS bf_deps_openexr)
+endif()""")
+    c = c.replace("add_library(bf::dependencies::opencolorio ALIAS OpenColorIO::OpenColorIO)",
+"""if(TARGET OpenColorIO::OpenColorIO)
+  add_library(bf::dependencies::opencolorio ALIAS OpenColorIO::OpenColorIO)
+else()
+  add_library(bf_deps_opencolorio INTERFACE)
+  add_library(bf::dependencies::opencolorio ALIAS bf_deps_opencolorio)
+endif()""")
+    with open(p_dep, "w") as f:
+        f.write(c)
+
+# 3. source/blender/CMakeLists.txt: skip datatoc and shader_tool subdirectories
+p_blender = os.path.join(src, "source/blender/CMakeLists.txt")
+if os.path.exists(p_blender):
+    with open(p_blender, "r") as f:
+        c = f.read()
+    if "WITH_CROSSCOMPILED_TOOLS" not in c:
+        c = c.replace("add_subdirectory(datatoc)\nadd_subdirectory(gpu/shader_tool)",
+                      "if(NOT WITH_CROSSCOMPILED_TOOLS)\n  add_subdirectory(datatoc)\n  add_subdirectory(gpu/shader_tool)\nendif()")
+        with open(p_blender, "w") as f:
+            f.write(c)
+
+# 4. datatoc/CMakeLists.txt
+p = os.path.join(src, "source/blender/datatoc/CMakeLists.txt")
+if os.path.exists(p):
+    with open(p, "r") as f:
+        c = f.read()
+    if "WITH_CROSSCOMPILED_TOOLS" not in c:
+        c = c.replace("add_executable(datatoc ${SRC})\noptimize_debug_target(datatoc)",
+                      "if(NOT WITH_CROSSCOMPILED_TOOLS)\n  add_executable(datatoc ${SRC})\n  optimize_debug_target(datatoc)\nendif()")
+        with open(p, "w") as f:
+            f.write(c)
+
+# 5. shader_tool/CMakeLists.txt
+p = os.path.join(src, "source/blender/gpu/shader_tool/CMakeLists.txt")
+if os.path.exists(p):
+    with open(p, "r") as f:
+        c = f.read()
+    if "WITH_CROSSCOMPILED_TOOLS" not in c:
+        c = c.replace("add_executable(shader_tool ${SRC})\noptimize_debug_target(shader_tool)",
+                      "if(NOT WITH_CROSSCOMPILED_TOOLS)\n  add_executable(shader_tool ${SRC})\n  optimize_debug_target(shader_tool)\nendif()")
+        with open(p, "w") as f:
+            f.write(c)
+
+# 6. makesdna/intern/CMakeLists.txt
+p = os.path.join(src, "source/blender/makesdna/intern/CMakeLists.txt")
+if os.path.exists(p):
+    with open(p, "r") as f:
+        c = f.read()
+    if "WITH_CROSSCOMPILED_TOOLS" not in c:
+        c = c.replace("add_executable(makesdna ${SRC} ${SRC_DNA_INC})",
+                      "if(NOT WITH_CROSSCOMPILED_TOOLS)\n  add_executable(makesdna ${SRC} ${SRC_DNA_INC})")
+        c = c.replace("target_link_libraries(makesdna PRIVATE bf::dependencies::pthreads)",
+                      "target_link_libraries(makesdna PRIVATE bf::dependencies::pthreads)\nendif()")
+        with open(p, "w") as f:
+            f.write(c)
+
+# 7. makesrna/intern/CMakeLists.txt
+p = os.path.join(src, "source/blender/makesrna/intern/CMakeLists.txt")
+if os.path.exists(p):
+    with open(p, "r") as f:
+        c = f.read()
+    if "WITH_CROSSCOMPILED_TOOLS" not in c:
+        c = c.replace("add_executable(makesrna ${SRC} ${SRC_RNA_INC} ${SRC_DNA_INC})",
+                      "if(NOT WITH_CROSSCOMPILED_TOOLS)\n  add_executable(makesrna ${SRC} ${SRC_RNA_INC} ${SRC_DNA_INC})")
+        c = c.replace("target_link_libraries(makesrna PRIVATE bf::dependencies::fmt)",
+                      "target_link_libraries(makesrna PRIVATE bf::dependencies::fmt)\nendif()")
         with open(p, "w") as f:
             f.write(c)
 '
@@ -236,6 +309,10 @@ cmake -B "${HOST_TOOLS_DIR}" -S "${BLENDER_SRC}" -G Ninja \
     -DWITH_FFMPEG=OFF \
     -DWITH_IMAGE_OPENJPEG=OFF \
     -DWITH_IMAGE_TIFF=OFF \
+    -DWITH_IMAGE_DDS=OFF \
+    -DWITH_IMAGE_CINEON=OFF \
+    -DWITH_IMAGE_HDR=OFF \
+    -DWITH_IMAGE_WEBP=OFF \
     -DWITH_HARFBUZZ=OFF \
     -DWITH_FREETYPE=OFF \
     -DWITH_FRIBIDI=OFF \
