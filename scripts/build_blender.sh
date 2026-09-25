@@ -66,6 +66,8 @@ fi
 echo "===> Patching Blender CMake for Android ARM64..."
 # Bypass FreeType Brotli check (Brotli only used for woff web fonts)
 sed -i 's/message(FATAL_ERROR "Freetype needs to be compiled with brotli support!")/# &/' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake"
+# Remove -lutil for Android (Bionic does not have libutil)
+sed -i 's/-lutil//g' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake"
 
 # Build blender as a shared library for Android NativeActivity
 sed -i 's/add_executable(blender ${EXETYPE} ${SRC})/add_library(blender SHARED ${SRC})/' "${BLENDER_SRC}/source/creator/CMakeLists.txt"
@@ -81,6 +83,10 @@ fi
 if [ -f "${SYSROOT_DIR}/usr/include/OpenImageIO/ustring.h" ]; then
     sed -i '/namespace OpenImageIO = OIIO;/d' "${SYSROOT_DIR}/usr/include/OpenImageIO/ustring.h"
 fi
+
+echo "===> Ensuring dummy libutil for Android sysroot..."
+${TOOLCHAIN}/bin/llvm-ar cr "${SYSROOT_DIR}/usr/lib/libutil.a" 2>/dev/null || true
+echo "INPUT()" > "${SYSROOT_DIR}/usr/lib/libutil.so"
 
 echo "===> Ensuring sse2neon header..."
 mkdir -p "${SYSROOT_DIR}/usr/include/sse2neon"
