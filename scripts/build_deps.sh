@@ -125,6 +125,12 @@ cmake -B build-png -S libpng -G Ninja \
     -DPNG_TESTS=OFF
 ninja -C build-png install
 
+PNG_REAL=$(find "${SYSROOT_DIR}/usr/lib" -name "libpng*.so" | head -n 1 || true)
+if [ -n "${PNG_REAL}" ]; then
+    cp -P "${PNG_REAL}" "${SYSROOT_DIR}/usr/lib/libpng.so" 2>/dev/null || true
+    cp -P "${PNG_REAL}" "${SYSROOT_DIR}/usr/lib/libpng16.so" 2>/dev/null || true
+fi
+
 echo "===> Building libepoxy..."
 cd "${BUILD_TMP}"
 if [ ! -d "libepoxy" ]; then
@@ -297,6 +303,7 @@ OPENEXR_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenEXRConfig.cmake" | head -n 1 
 OCIO_DIR=$(find "${SYSROOT_DIR}/usr" -name "OpenColorIOConfig.cmake" | head -n 1 | xargs -r dirname || true)
 JPEG_DIR=$(find "${SYSROOT_DIR}/usr" -name "*jpeg*Config.cmake" -o -name "*jpeg*-config.cmake" | head -n 1 | xargs -r dirname || true)
 TIFF_DIR=$(find "${SYSROOT_DIR}/usr" -name "*tiff*Config.cmake" -o -name "*tiff*-config.cmake" | head -n 1 | xargs -r dirname || true)
+PNG_LIB=$(find "${SYSROOT_DIR}/usr/lib" -name "libpng*.so" | head -n 1 || true)
 
 echo "===> Installing robin-map..."
 cd "${BUILD_TMP}"
@@ -331,7 +338,7 @@ cmake -B build-oiio -S OpenImageIO -G Ninja \
     -DTIFF_LIBRARY="${SYSROOT_DIR}/usr/lib/libtiff.so" \
     -DPNG_ROOT="${SYSROOT_DIR}/usr" \
     -DPNG_PNG_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
-    -DPNG_LIBRARY="${SYSROOT_DIR}/usr/lib/libpng16.so" \
+    -DPNG_LIBRARY="${PNG_LIB}" \
     -DROBINMAP_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
     -DRobinmap_ROOT="${SYSROOT_DIR}/usr" \
     -Dfmt_DIR="${SYSROOT_DIR}/usr/lib/cmake/fmt" \
