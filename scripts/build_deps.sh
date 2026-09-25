@@ -270,10 +270,28 @@ cmake -B build-ocio -S OpenColorIO -G Ninja \
     -DOCIO_INSTALL_EXT_PACKAGES=MISSING
 ninja -C build-ocio install
 
-echo "===> Building OpenImageIO..."
+echo "===> Building libtiff..."
+cd "${BUILD_TMP}"
+if [ ! -d "libtiff" ]; then
+    git clone --depth 1 -b v4.6.0 https://gitlab.com/libtiff/libtiff.git
+fi
+cmake -B build-tiff -S libtiff -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
+    -DANDROID_ABI=arm64-v8a \
+    -DANDROID_PLATFORM=android-${API_LEVEL} \
+    -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
+    -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version" \
+    -DBUILD_SHARED_LIBS=ON \
+    -Dtiff-tools=OFF \
+    -Dtiff-tests=OFF \
+    -Dtiff-docs=OFF
+ninja -C build-tiff install
+
+echo "===> Building OpenImageIO (v3.0.4.0 without Boost)..."
 cd "${BUILD_TMP}"
 if [ ! -d "OpenImageIO" ]; then
-    git clone --depth 1 -b v2.5.12.0 https://github.com/AcademySoftwareFoundation/OpenImageIO.git
+    git clone --depth 1 -b v3.0.4.0 https://github.com/AcademySoftwareFoundation/OpenImageIO.git
 fi
 cmake -B build-oiio -S OpenImageIO -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
@@ -296,6 +314,8 @@ cmake -B build-oiio -S OpenImageIO -G Ninja \
     -DUSE_WEBP=OFF \
     -DUSE_DICOM=OFF \
     -DUSE_FONTCONFIG=OFF \
+    -DUSE_JXL=OFF \
+    -DUSE_LIBUHDR=OFF \
     -DSTOP_ON_WARNING=OFF
 ninja -C build-oiio install
 
