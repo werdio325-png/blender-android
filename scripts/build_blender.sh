@@ -283,12 +283,19 @@ if [ -z "${HOST_CC}" ]; then
 fi
 echo "Using host compilers: CC=${HOST_CC}, CXX=${HOST_CXX}"
 
-echo "===> Building native host code generators (datatoc, shader_tool, makesdna, makesrna)..."
+echo "===> Ensuring OpenImageIO and Imath headers are available for host tools..."
+sudo cp -r "${SYSROOT_DIR}/usr/include/OpenImageIO" /usr/local/include/ 2>/dev/null || true
+sudo cp -r "${SYSROOT_DIR}/usr/include/Imath" /usr/local/include/ 2>/dev/null || true
+sudo cp -r "${SYSROOT_DIR}/usr/include/OpenEXR" /usr/local/include/ 2>/dev/null || true
+
+echo "===> Building native host code generators (datatoc, shader_tool, makesdna, makesrna)..." 
 HOST_TOOLS_DIR="${BUILD_TMP}/build-host-tools"
 mkdir -p "${HOST_TOOLS_DIR}"
 cmake -B "${HOST_TOOLS_DIR}" -S "${BLENDER_SRC}" -G Ninja \
     -DCMAKE_C_COMPILER="${HOST_CC}" \
     -DCMAKE_CXX_COMPILER="${HOST_CXX}" \
+    -DCMAKE_C_FLAGS="-I${SYSROOT_DIR}/usr/include" \
+    -DCMAKE_CXX_FLAGS="-I${SYSROOT_DIR}/usr/include" \
     -DCMAKE_BUILD_TYPE=Release \
     -DWITH_CROSSCOMPILED_TOOLS=OFF \
     -DWITH_HEADLESS=ON \
