@@ -111,11 +111,10 @@ cmake -B build-jpeg -S libjpeg-turbo -G Ninja \
     -DENABLE_SHARED=ON
 ninja -C build-jpeg install
 
-echo "===> Building libpng..."
+echo "===> Building libpng (v1.6.43)..."
 cd "${BUILD_TMP}"
-if [ ! -d "libpng" ]; then
-    git clone --depth 1 https://github.com/pnggroup/libpng.git
-fi
+rm -rf libpng build-png
+git clone --depth 1 -b v1.6.43 https://github.com/pnggroup/libpng.git
 cmake -B build-png -S libpng -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
     -DANDROID_ABI=arm64-v8a \
@@ -125,6 +124,11 @@ cmake -B build-png -S libpng -G Ninja \
     -DPNG_TESTS=OFF
 ninja -C build-png install
 
+# Ensure both libpng and libpng16 headers and libraries exist
+mkdir -p "${SYSROOT_DIR}/usr/include/libpng16"
+if [ -f "${SYSROOT_DIR}/usr/include/png.h" ]; then
+    cp "${SYSROOT_DIR}/usr/include/png"* "${SYSROOT_DIR}/usr/include/libpng16/" 2>/dev/null || true
+fi
 PNG_REAL=$(find "${SYSROOT_DIR}/usr/lib" -name "libpng*.so" | head -n 1 || true)
 if [ -n "${PNG_REAL}" ]; then
     cp -P "${PNG_REAL}" "${SYSROOT_DIR}/usr/lib/libpng.so" 2>/dev/null || true
