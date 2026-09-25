@@ -24,8 +24,8 @@ if [ -f "blender-deps-android-arm64.tar.gz" ]; then
     tar -xzf blender-deps-android-arm64.tar.gz -C "${SYSROOT_DIR}"
 fi
 
-echo "===> Creating Android Vulkan pkg-config..."
-mkdir -p "${SYSROOT_DIR}/usr/lib/pkgconfig"
+echo "===> Ensuring Vulkan & Shaderc pkg-config..."
+mkdir -p "${SYSROOT_DIR}/usr/lib/pkgconfig" "${SYSROOT_DIR}/usr/share/pkgconfig"
 cat << VEOF > "${SYSROOT_DIR}/usr/lib/pkgconfig/vulkan.pc"
 prefix=${SYSROOT_DIR}/usr
 exec_prefix=\${prefix}
@@ -38,6 +38,22 @@ Version: 1.3.290
 Libs: -L${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL} -lvulkan
 Cflags: -I${TOOLCHAIN}/sysroot/usr/include
 VEOF
+
+if [ ! -f "${SYSROOT_DIR}/usr/lib/pkgconfig/shaderc.pc" ]; then
+cat << SEOF > "${SYSROOT_DIR}/usr/lib/pkgconfig/shaderc.pc"
+prefix=${SYSROOT_DIR}/usr
+exec_prefix=\${prefix}
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: shaderc
+Description: Shaderc library for Android NDK
+Version: 2024.1
+Libs: -L\${libdir} -lshaderc
+Cflags: -I\${includedir}
+SEOF
+fi
+
 export PKG_CONFIG_PATH="${SYSROOT_DIR}/usr/lib/pkgconfig:${SYSROOT_DIR}/usr/share/pkgconfig:${PKG_CONFIG_PATH:-}"
 
 echo "===> Cloning Blender source (v5.2.0)..."
@@ -47,6 +63,13 @@ if [ ! -d "blender" ]; then
     git clone --depth 1 --branch v5.2.0 https://projects.blender.org/blender/blender.git
 fi
 
+echo "===> Patching Blender CMake for Android ARM64..."
+# Bypass FreeType Brotli check (Brotli only used for woff web fonts)
+sed -i 's/message(FATAL_ERROR "Freetype needs to be compiled with brotli support!")/# &/' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake"
+
+# Build blender as a shared library for Android NativeActivity
+sed -i 's/add_executable(blender ${EXETYPE} ${SRC})/add_library(blender SHARED ${SRC})/' "${BLENDER_SRC}/source/creator/CMakeLists.txt"
+
 echo "===> Configuring Blender for Android ARM64..."
 cmake -B build-blender -S blender -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
@@ -54,10 +77,17 @@ cmake -B build-blender -S blender -G Ninja \
     -DANDROID_PLATFORM=android-${API_LEVEL} \
     -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr" \
     -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version" \
-    -DWITH_VULKAN=ON \
+    -DWITH_VULKAN_BACKEND=ON \
     -DVulkan_INCLUDE_DIRS="${TOOLCHAIN}/sysroot/usr/include" \
     -DVulkan_LIBRARIES="${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL}/libvulkan.so" \
+    -DShaderc_INCLUDE_DIRS="${SYSROOT_DIR}/usr/include" \
+    -DShaderc_LIBRARIES="${SYSROOT_DIR}/usr/lib/libshaderc.so" \
+    -DHAVE_BROTLI=TRUE \
+    -DHAVE_BROTLI_INC="${SYSROOT_DIR}/usr/include/freetype2" \
     -DWITH_GHOST_SDL=ON \
+    -DWITH_SDL=ON \
+    -DSDL_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
+    -DSDL_LIBRARY="${SYSROOT_DIR}/usr/lib/libSDL3.so" \
     -DWITH_GHOST_X11=OFF \
     -DWITH_GHOST_WAYLAND=OFF \
     -DWITH_X11=OFF \
@@ -65,6 +95,7 @@ cmake -B build-blender -S blender -G Ninja \
     -DWITH_X11_XF86VMODE=OFF \
     -DWITH_X11_XFIXES=OFF \
     -DWITH_X11_ALPHA=OFF \
+    -DWITH_OPENGL_BACKEND=OFF \
     -DWITH_PYTHON=ON \
     -DPYTHON_INCLUDE_DIR="${SYSROOT_DIR}/usr/include/python3.12" \
     -DPYTHON_LIBRARY="${SYSROOT_DIR}/usr/lib/libpython3.12.so" \
@@ -81,25 +112,32 @@ cmake -B build-blender -S blender -G Ninja \
     -DEPOXY_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
     -DEPOXY_LIBRARY="${SYSROOT_DIR}/usr/lib/libepoxy.so" \
     -Dfmt_DIR="${SYSROOT_DIR}/usr/lib/cmake/fmt" \
+    -DEigen3_DIR="${SYSROOT_DIR}/usr/lib/cmake/eigen3" \
+    -DImath_DIR="${SYSROOT_DIR}/usr/lib/cmake/Imath" \
+    -DOpenEXR_DIR="${SYSROOT_DIR}/usr/lib/cmake/OpenEXR" \
+    -DOpenColorIO_DIR="${SYSROOT_DIR}/usr/lib/cmake/OpenColorIO" \
+    -DOpenImageIO_DIR="${SYSROOT_DIR}/usr/lib/cmake/OpenImageIO" \
     -DWITH_GMP=OFF \
+    -DWITH_MANIFOLD=OFF \
     -DWITH_BOOST=OFF \
     -DWITH_LLVM=OFF \
     -DWITH_MEM_JEMALLOC=OFF \
     -DWITH_CYCLES=OFF \
-    -DWITH_OPENIMAGEIO=OFF \
-    -DWITH_OPENCOLORIO=OFF \
     -DWITH_OPENSUBDIV=OFF \
     -DWITH_OPENVDB=OFF \
     -DWITH_ALEMBIC=OFF \
     -DWITH_USD=OFF \
+    -DWITH_HYDRA=OFF \
     -DWITH_CODEC_FFMPEG=OFF \
+    -DWITH_CODEC_SNDFILE=OFF \
     -DWITH_DRACO=OFF \
-    -DWITH_IMAGE_OPENEXR=OFF \
-    -DWITH_IMAGE_TIFF=OFF \
+    -DWITH_MESHOPTIMIZER=OFF \
+    -DWITH_LIBMV=OFF \
     -DWITH_IMAGE_OPENJPEG=OFF \
     -DWITH_IMAGE_CINEON=OFF \
     -DWITH_IMAGE_HDR=OFF \
     -DWITH_IMAGE_DDS=OFF \
+    -DWITH_IMAGE_WEBP=OFF \
     -DWITH_AUDASPACE=OFF \
     -DWITH_SYSTEM_AUDASPACE=OFF \
     -DWITH_INTERNATIONAL=OFF \
@@ -114,10 +152,17 @@ rm -rf "${APK_DIR}"
 mkdir -p "${APK_DIR}/lib/arm64-v8a" "${APK_DIR}/assets/datafiles" "${APK_DIR}/assets/scripts"
 
 # Copy libraries
-cp ${SYSROOT_DIR}/usr/lib/*.so* "${APK_DIR}/lib/arm64-v8a/" || true
-find build-blender/lib -name "*.so" -exec cp {} "${APK_DIR}/lib/arm64-v8a/" \; 2>/dev/null || true
+cp -P ${SYSROOT_DIR}/usr/lib/*.so* "${APK_DIR}/lib/arm64-v8a/" || true
+find "${APK_DIR}/lib/arm64-v8a" -type l -exec cp --remove-destination "$(readlink -f {})" {} \; 2>/dev/null || true
+
+# Copy Blender shared libs and main binary
+find build-blender/lib -name "*.so*" -exec cp {} "${APK_DIR}/lib/arm64-v8a/" \; 2>/dev/null || true
+find build-blender/bin -name "*.so*" -exec cp {} "${APK_DIR}/lib/arm64-v8a/" \; 2>/dev/null || true
+
 if [ -f "build-blender/bin/blender" ]; then
     cp build-blender/bin/blender "${APK_DIR}/lib/arm64-v8a/libmain.so"
+elif [ -f "build-blender/bin/libblender.so" ]; then
+    cp build-blender/bin/libblender.so "${APK_DIR}/lib/arm64-v8a/libmain.so"
 fi
 
 # Copy assets
