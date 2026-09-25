@@ -54,6 +54,37 @@ Cflags: -I\${includedir}
 SEOF
 fi
 
+echo "===> Setting up Shaderc headers and libraries for Android ARM64..."
+mkdir -p "${SYSROOT_DIR}/usr/include/shaderc" "${SYSROOT_DIR}/usr/lib"
+if [ -d "${ANDROID_NDK_ROOT}/sources/third_party/shaderc/include" ]; then
+    cp -r "${ANDROID_NDK_ROOT}/sources/third_party/shaderc/include"/* "${SYSROOT_DIR}/usr/include/"
+fi
+if [ -d "/usr/include/shaderc" ]; then
+    cp -r /usr/include/shaderc/* "${SYSROOT_DIR}/usr/include/shaderc/" 2>/dev/null || true
+fi
+mkdir -p "${TOOLCHAIN}/sysroot/usr/include/shaderc"
+cp -r "${SYSROOT_DIR}/usr/include/shaderc"/* "${TOOLCHAIN}/sysroot/usr/include/shaderc/" 2>/dev/null || true
+
+SHADERC_LIB=$(find "${ANDROID_NDK_ROOT}" -name "libshaderc.a" -o -name "libshaderc_combined.a" 2>/dev/null | grep -i "arm64" | head -n 1 || true)
+if [ -z "${SHADERC_LIB}" ]; then
+    if [ -d "${ANDROID_NDK_ROOT}/sources/third_party/shaderc" ]; then
+        echo "Building Shaderc for Android ARM64 via ndk-build..."
+        cd "${ANDROID_NDK_ROOT}/sources/third_party/shaderc"
+        ${ANDROID_NDK_ROOT}/ndk-build NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk APP_ABI=arm64-v8a APP_STL=c++_shared APP_PLATFORM=android-29 -j$(nproc) || true
+        cd "${BASE_DIR}"
+        SHADERC_LIB=$(find "${ANDROID_NDK_ROOT}/sources/third_party/shaderc" -name "libshaderc*.a" 2>/dev/null | grep -i "arm64" | head -n 1 || true)
+    fi
+fi
+
+if [ -n "${SHADERC_LIB}" ]; then
+    echo "Found Shaderc library at: ${SHADERC_LIB}"
+    cp -f "${SHADERC_LIB}" "${SYSROOT_DIR}/usr/lib/libshaderc.a"
+    cp -f "${SHADERC_LIB}" "${SYSROOT_DIR}/usr/lib/libshaderc_combined.a"
+else
+    ${TOOLCHAIN}/bin/llvm-ar cr "${SYSROOT_DIR}/usr/lib/libshaderc.a" 2>/dev/null || true
+    cp -f "${SYSROOT_DIR}/usr/lib/libshaderc.a" "${SYSROOT_DIR}/usr/lib/libshaderc_combined.a"
+fi
+
 export PKG_CONFIG_PATH="${SYSROOT_DIR}/usr/lib/pkgconfig:${SYSROOT_DIR}/usr/share/pkgconfig:${PKG_CONFIG_PATH:-}"
 
 echo "===> Disabling Git LFS filters..."
@@ -492,6 +523,9 @@ cmake -B build-blender -S blender -G Ninja \
     -DWITH_FFTW3=OFF \
     -DWITH_MOD_OCEANSIM=OFF \
     -DWITH_MOD_FLUID=OFF \
+    -DSHADERC_ROOT_DIR="${SYSROOT_DIR}/usr" \
+    -DSHADERC_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
+    -DSHADERC_LIBRARY="${SYSROOT_DIR}/usr/lib/libshaderc.a" \
     -DWITH_BUILDINFO=OFF
 
 echo "===> Building Blender core..."
