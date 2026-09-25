@@ -7,6 +7,7 @@ on:
       - 'scripts/build_blender.sh'
       - 'scripts/build_deps.sh'
       - '.github/workflows/build-apk.yml'
+      - 'bionic-arm64.tar.gz'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -23,6 +24,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build git wget tar zip unzip openjdk-17-jdk meson pkg-config libeigen3-dev qemu-user-static binfmt-support
+          if [ -f bionic-arm64.tar.gz ]; then
+            sudo tar -xzf bionic-arm64.tar.gz -C /
+            sudo chmod 755 /system/bin/linker64
+          fi
 
       - name: Restore Android Dependencies Sysroot
         id: cache-deps
