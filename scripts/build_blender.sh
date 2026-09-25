@@ -174,10 +174,29 @@ fi
 export SSE2NEON_ROOT_DIR="${SYSROOT_DIR}/usr"
 export SSE2NEON_INCLUDE_DIR="${SYSROOT_DIR}/usr/include"
 
+echo "===> Detecting C/C++ compiler for native host tools (GCC >= 14 or Clang >= 17)..."
+HOST_CC=""
+HOST_CXX=""
+for c in clang-18 clang-17 clang gcc-14; do
+    if command -v "$c" >/dev/null 2>&1; then
+        HOST_CC="$c"
+        HOST_CXX="${c/clang/clang++}"
+        HOST_CXX="${HOST_CXX/gcc/g++}"
+        break
+    fi
+done
+if [ -z "${HOST_CC}" ]; then
+    HOST_CC="gcc-14"
+    HOST_CXX="g++-14"
+fi
+echo "Using host compilers: CC=${HOST_CC}, CXX=${HOST_CXX}"
+
 echo "===> Building native host code generators (datatoc, shader_tool, makesdna, makesrna)..."
 HOST_TOOLS_DIR="${BUILD_TMP}/build-host-tools"
 mkdir -p "${HOST_TOOLS_DIR}"
 cmake -B "${HOST_TOOLS_DIR}" -S "${BLENDER_SRC}" -G Ninja \
+    -DCMAKE_C_COMPILER="${HOST_CC}" \
+    -DCMAKE_CXX_COMPILER="${HOST_CXX}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DWITH_CROSSCOMPILED_TOOLS=OFF \
     -DWITH_HEADLESS=ON \
