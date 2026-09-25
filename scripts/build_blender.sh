@@ -117,6 +117,11 @@ sed -i 's/-no-pie//g' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.c
 sed -i 's/add_executable(blender ${EXETYPE} ${SRC})/add_library(blender SHARED ${SRC})/' "${BLENDER_SRC}/source/creator/CMakeLists.txt"
 # Disable TBB malloc proxy checks in platform_unix.cmake
 sed -i 's/if(WITH_TBB_MALLOC_PROXY)/if(FALSE)/' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake"
+# Patch dualcon octree.cpp for modern Eigen JacobiSVD compatibility
+if [ -f "${BLENDER_SRC}/intern/dualcon/intern/octree.cpp" ]; then
+    sed -i 's/Eigen::JacobiSVD<Eigen::Matrix3f, Options> svd = a.jacobiSvd<Options>();//' "${BLENDER_SRC}/intern/dualcon/intern/octree.cpp"
+    sed -i 's/const int Options = Eigen::ComputeFullU | Eigen::ComputeFullV;/Eigen::JacobiSVD<Eigen::Matrix3f> svd(a, Eigen::ComputeFullU | Eigen::ComputeFullV);/' "${BLENDER_SRC}/intern/dualcon/intern/octree.cpp"
+fi
 
 echo "===> Patching Blender CMake for native host code generators and dependencies..."
 python3 -c '
