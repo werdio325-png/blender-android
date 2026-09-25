@@ -115,8 +115,6 @@ sed -i 's/-no-pie//g' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.c
 
 # Build blender as a shared library for Android NativeActivity
 sed -i 's/add_executable(blender ${EXETYPE} ${SRC})/add_library(blender SHARED ${SRC})/' "${BLENDER_SRC}/source/creator/CMakeLists.txt"
-# Bypass oiiotool check for cross-compilation
-sed -i 's/get_target_property(OPENIMAGEIO_TOOL OpenImageIO::oiiotool LOCATION)/# &/' "${BLENDER_SRC}/build_files/cmake/platform/dependency_targets.cmake"
 # Disable TBB malloc proxy checks in platform_unix.cmake
 sed -i 's/if(WITH_TBB_MALLOC_PROXY)/if(FALSE)/' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake"
 
