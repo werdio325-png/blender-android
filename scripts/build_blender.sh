@@ -60,7 +60,17 @@ echo "===> Cloning Blender source (v5.2.0)..."
 mkdir -p "${BUILD_TMP}"
 cd "${BUILD_TMP}"
 if [ ! -d "blender" ]; then
-    git clone --depth 1 --branch v5.2.0 https://projects.blender.org/blender/blender.git
+    git config --global http.version HTTP/1.1 2>/dev/null || true
+    for attempt in 1 2 3; do
+        echo "Cloning Blender source (attempt $attempt)..."
+        if git clone --depth 1 --branch v5.2.0 https://github.com/blender/blender.git blender; then
+            break
+        elif git clone --depth 1 --branch v5.2.0 https://projects.blender.org/blender/blender.git blender; then
+            break
+        fi
+        rm -rf blender
+        sleep 5
+    done
 fi
 
 echo "===> Patching Blender CMake for Android ARM64..."
