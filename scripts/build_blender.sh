@@ -76,17 +76,10 @@ sed -i 's/if(WITH_TBB_MALLOC_PROXY)/if(FALSE)/' "${BLENDER_SRC}/build_files/cmak
 
 echo "===> Ensuring OpenImageIO namespace compatibility for Blender..."
 if [ -f "${SYSROOT_DIR}/usr/include/OpenImageIO/oiioversion.h" ]; then
-    if ! grep -q "namespace OpenImageIO = " "${SYSROOT_DIR}/usr/include/OpenImageIO/oiioversion.h"; then
-        sed -i '/namespace OIIO = /a namespace OpenImageIO = OIIO;' "${SYSROOT_DIR}/usr/include/OpenImageIO/oiioversion.h"
-    fi
+    sed -i 's/namespace OIIO = \([a-zA-Z0-9_]*\);/&\nnamespace OpenImageIO = \1;/' "${SYSROOT_DIR}/usr/include/OpenImageIO/oiioversion.h"
 fi
 if [ -f "${SYSROOT_DIR}/usr/include/OpenImageIO/ustring.h" ]; then
-    if ! grep -q "namespace OpenImageIO = " "${SYSROOT_DIR}/usr/include/OpenImageIO/ustring.h"; then
-        sed -i '/#define OPENIMAGEIO_USTRING_H/a namespace OpenImageIO = OIIO;' "${SYSROOT_DIR}/usr/include/OpenImageIO/ustring.h"
-    fi
-fi
-if [ -f "${BLENDER_SRC}/source/blender/blenlib/BLI_ustring.hh" ]; then
-    sed -i 's/#include <OpenImageIO\/ustring.h>/#include <OpenImageIO\/ustring.h>\nnamespace OpenImageIO = OIIO;/' "${BLENDER_SRC}/source/blender/blenlib/BLI_ustring.hh"
+    sed -i '/namespace OpenImageIO = OIIO;/d' "${SYSROOT_DIR}/usr/include/OpenImageIO/ustring.h"
 fi
 
 echo "===> Ensuring sse2neon header..."
