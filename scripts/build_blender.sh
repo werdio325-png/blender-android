@@ -68,6 +68,8 @@ echo "===> Patching Blender CMake for Android ARM64..."
 sed -i 's/message(FATAL_ERROR "Freetype needs to be compiled with brotli support!")/# &/' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake"
 # Remove -lutil for Android (Bionic does not have libutil)
 sed -i 's/-lutil//g' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake"
+# Remove -no-pie for Android (Android Bionic linker strictly requires PIE executables)
+sed -i 's/-no-pie//g' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake"
 
 # Build blender as a shared library for Android NativeActivity
 sed -i 's/add_executable(blender ${EXETYPE} ${SRC})/add_library(blender SHARED ${SRC})/' "${BLENDER_SRC}/source/creator/CMakeLists.txt"
@@ -102,6 +104,8 @@ if [ -f "${BASE_DIR}/bionic-arm64.tar.gz" ]; then
 fi
 if [ -d /system/lib64 ]; then
     sudo cp -P ${SYSROOT_DIR}/usr/lib/*.so* /system/lib64/ 2>/dev/null || true
+    sudo cp -P ${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/*.so /system/lib64/ 2>/dev/null || true
+    sudo cp -P ${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL}/*.so /system/lib64/ 2>/dev/null || true
 fi
 sudo chmod -R 755 /system 2>/dev/null || true
 export QEMU_LD_PREFIX="/"
@@ -131,8 +135,10 @@ cmake -B build-blender -S blender -G Ninja \
     -DANDROID_PLATFORM=android-${API_LEVEL} \
     -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr" \
     -DCMAKE_FIND_ROOT_PATH="${SYSROOT_DIR}/usr;${TOOLCHAIN}/sysroot" \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DWITH_INSTALL_PORTABLE=OFF \
     -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version" \
-    -DCMAKE_EXE_LINKER_FLAGS="-Wl,--undefined-version" \
+    -DCMAKE_EXE_LINKER_FLAGS="-pie -Wl,--undefined-version" \
     -DWITH_VULKAN_BACKEND=ON \
     -DVulkan_INCLUDE_DIRS="${TOOLCHAIN}/sysroot/usr/include" \
     -DVulkan_LIBRARIES="${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL}/libvulkan.so" \
@@ -214,6 +220,7 @@ mkdir -p "${APK_DIR}/lib/arm64-v8a" "${APK_DIR}/assets/datafiles" "${APK_DIR}/as
 
 # Copy libraries
 cp -P ${SYSROOT_DIR}/usr/lib/*.so* "${APK_DIR}/lib/arm64-v8a/" || true
+cp -P ${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so "${APK_DIR}/lib/arm64-v8a/" 2>/dev/null || true
 find "${APK_DIR}/lib/arm64-v8a" -type l -exec cp --remove-destination "$(readlink -f {})" {} \; 2>/dev/null || true
 
 # Copy Blender shared libs and main binary
