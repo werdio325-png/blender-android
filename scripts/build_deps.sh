@@ -10,7 +10,7 @@ BASE_DIR="$(pwd)"
 SYSROOT_DIR="${BASE_DIR}/sysroot-android-arm64"
 BUILD_TMP="${BASE_DIR}/build-tmp"
 
-mkdir -p "${SYSROOT_DIR}/usr/include" "${SYSROOT_DIR}/usr/lib" "${BUILD_TMP}"
+mkdir -p "${SYSROOT_DIR}/usr/include" "${SYSROOT_DIR}/usr/lib" "${SYSROOT_DIR}/usr/lib/pkgconfig" "${SYSROOT_DIR}/usr/share" "${BUILD_TMP}"
 
 echo "===> Checking Android NDK..."
 if [ -z "${ANDROID_NDK_ROOT:-}" ]; then
@@ -37,6 +37,7 @@ export CFLAGS="-fPIC -ftls-model=global-dynamic"
 export CXXFLAGS="-fPIC -ftls-model=global-dynamic"
 export LDFLAGS="-fPIC"
 export CMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake"
+export PKG_CONFIG_PATH="${SYSROOT_DIR}/usr/lib/pkgconfig:${SYSROOT_DIR}/usr/share/pkgconfig:${PKG_CONFIG_PATH:-}"
 
 echo "===> Building mimalloc (Fast memory allocator)..."
 cd "${BUILD_TMP}"
@@ -63,12 +64,11 @@ cmake -B build-onetbb -S oneTBB -G Ninja \
     -DANDROID_PLATFORM=android-${API_LEVEL} \
     -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
     -DTBB_TEST=OFF \
-    -DTBB_EXAMPLES=OFF \
     -DTBBMALLOC_BUILD=OFF \
     -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version"
 ninja -C build-onetbb install
 
-echo "===> Building fmt (Fast C++ formatting library)..."
+echo "===> Building fmt (Formatting Library)..."
 cd "${BUILD_TMP}"
 if [ ! -d "fmt" ]; then
     git clone --depth 1 https://github.com/fmtlib/fmt.git
@@ -79,11 +79,10 @@ cmake -B build-fmt -S fmt -G Ninja \
     -DANDROID_PLATFORM=android-${API_LEVEL} \
     -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
     -DFMT_TEST=OFF \
-    -DFMT_DOC=OFF \
     -DBUILD_SHARED_LIBS=ON
 ninja -C build-fmt install
 
-echo "===> Building zstd (Fast compression)..."
+echo "===> Building zstd (Compression Library)..."
 cd "${BUILD_TMP}"
 if [ ! -d "zstd" ]; then
     git clone --depth 1 https://github.com/facebook/zstd.git
@@ -95,8 +94,7 @@ cmake -B build-zstd -S zstd/build/cmake -G Ninja \
     -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
     -DZSTD_BUILD_PROGRAMS=OFF \
     -DZSTD_BUILD_TESTS=OFF \
-    -DZSTD_BUILD_SHARED=ON \
-    -DZSTD_BUILD_STATIC=OFF
+    -DZSTD_BUILD_SHARED=ON
 ninja -C build-zstd install
 
 echo "===> Building libjpeg-turbo..."
@@ -109,15 +107,14 @@ cmake -B build-jpeg -S libjpeg-turbo -G Ninja \
     -DANDROID_ABI=arm64-v8a \
     -DANDROID_PLATFORM=android-${API_LEVEL} \
     -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
-    -DENABLE_SHARED=ON \
-    -DENABLE_STATIC=OFF \
-    -DWITH_SIMD=OFF
+    -DWITH_SIMD=OFF \
+    -DENABLE_SHARED=ON
 ninja -C build-jpeg install
 
 echo "===> Building libpng..."
 cd "${BUILD_TMP}"
 if [ ! -d "libpng" ]; then
-    git clone --depth 1 https://github.com/glennrp/libpng.git
+    git clone --depth 1 https://github.com/pnggroup/libpng.git
 fi
 cmake -B build-png -S libpng -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
@@ -125,11 +122,10 @@ cmake -B build-png -S libpng -G Ninja \
     -DANDROID_PLATFORM=android-${API_LEVEL} \
     -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
     -DPNG_SHARED=ON \
-    -DPNG_STATIC=OFF \
     -DPNG_TESTS=OFF
 ninja -C build-png install
 
-echo "===> Building libepoxy (EGL/GL loader for Android)..."
+echo "===> Building libepoxy..."
 cd "${BUILD_TMP}"
 if [ ! -d "libepoxy" ]; then
     git clone --depth 1 https://github.com/anholt/libepoxy.git
@@ -145,7 +141,7 @@ pkg-config = 'pkg-config'
 [host_machine]
 system = 'android'
 cpu_family = 'aarch64'
-cpu = 'arm64'
+cpu = 'arm64-v8a'
 endian = 'little'
 MEOF
 rm -rf build-epoxy
@@ -155,6 +151,151 @@ meson setup build-epoxy libepoxy \
     -Degl=yes -Dglx=no -Dx11=false -Dtests=false -Ddocs=false \
     --default-library=shared
 ninja -C build-epoxy install
+
+echo "===> Installing and building shaderc (SPIR-V shader compiler)..."
+SHADERC_NDK_DIR="${ANDROID_NDK_ROOT}/sources/third_party/shaderc"
+SHADERC_BUILD_DIR="${BUILD_TMP}/shaderc-build"
+mkdir -p "${SHADERC_BUILD_DIR}/jni"
+
+cat << 'AMK_EOF' > "${SHADERC_BUILD_DIR}/jni/Android.mk"
+LOCAL_PATH := $(call my-dir)
+include $(CLEAR_VARS)
+LOCAL_MODULE := shaderc
+LOCAL_WHOLE_STATIC_LIBRARIES := shaderc
+include $(BUILD_SHARED_LIBRARY)
+$(call import-module,third_party/shaderc)
+AMK_EOF
+
+cat << 'APP_EOF' > "${SHADERC_BUILD_DIR}/jni/Application.mk"
+APP_ABI := arm64-v8a
+APP_PLATFORM := android-${API_LEVEL}
+APP_STL := c++_shared
+APP_EOF
+
+"${ANDROID_NDK_ROOT}/ndk-build" -C "${SHADERC_BUILD_DIR}" \
+    NDK_MODULE_PATH="${ANDROID_NDK_ROOT}/sources" \
+    -j$(nproc) || true
+
+mkdir -p "${SYSROOT_DIR}/usr/include" "${SYSROOT_DIR}/usr/lib" "${SYSROOT_DIR}/usr/lib/pkgconfig"
+cp -r "${SHADERC_NDK_DIR}/include/"* "${SYSROOT_DIR}/usr/include/" || true
+find "${SHADERC_BUILD_DIR}" -name "*.so" -exec cp {} "${SYSROOT_DIR}/usr/lib/" \; || true
+find "${SHADERC_BUILD_DIR}" -name "*.a" -exec cp {} "${SYSROOT_DIR}/usr/lib/" \; || true
+find "${SHADERC_NDK_DIR}" -name "*.a" -exec cp {} "${SYSROOT_DIR}/usr/lib/" \; || true
+
+if [ ! -f "${SYSROOT_DIR}/usr/lib/libshaderc.so" ]; then
+    SHADERC_A=$(find "${SYSROOT_DIR}/usr/lib" -name "libshaderc*.a" | head -n 1 || true)
+    if [ -n "${SHADERC_A}" ]; then
+        ${CXX} -shared -Wl,--whole-archive "${SHADERC_A}" -Wl,--no-whole-archive -o "${SYSROOT_DIR}/usr/lib/libshaderc.so" || true
+    fi
+fi
+
+cat << SEOF > "${SYSROOT_DIR}/usr/lib/pkgconfig/shaderc.pc"
+prefix=${SYSROOT_DIR}/usr
+exec_prefix=\${prefix}
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: shaderc
+Description: Shaderc library for Android NDK
+Version: 2024.1
+Libs: -L\${libdir} -lshaderc
+Cflags: -I\${includedir}
+SEOF
+
+echo "===> Installing sse2neon.h..."
+mkdir -p "${SYSROOT_DIR}/usr/include"
+wget -qO "${SYSROOT_DIR}/usr/include/sse2neon.h" https://raw.githubusercontent.com/DLTcollab/sse2neon/master/sse2neon.h
+
+echo "===> Installing Eigen3 headers..."
+mkdir -p "${SYSROOT_DIR}/usr/include/eigen3" "${SYSROOT_DIR}/usr/lib/cmake/eigen3" "${SYSROOT_DIR}/usr/share/eigen3/cmake"
+if [ -d "/usr/include/eigen3" ]; then
+    cp -r /usr/include/eigen3/* "${SYSROOT_DIR}/usr/include/eigen3/"
+    cp -r /usr/include/eigen3/* "${SYSROOT_DIR}/usr/include/" || true
+fi
+if [ -d "/usr/share/eigen3/cmake" ]; then
+    cp -r /usr/share/eigen3/cmake/* "${SYSROOT_DIR}/usr/share/eigen3/cmake/" || true
+    cp -r /usr/share/eigen3/cmake/* "${SYSROOT_DIR}/usr/lib/cmake/eigen3/" || true
+elif [ -d "/usr/lib/cmake/eigen3" ]; then
+    cp -r /usr/lib/cmake/eigen3/* "${SYSROOT_DIR}/usr/lib/cmake/eigen3/" || true
+fi
+
+echo "===> Building Imath..."
+cd "${BUILD_TMP}"
+if [ ! -d "Imath" ]; then
+    git clone --depth 1 -b v3.1.11 https://github.com/AcademySoftwareFoundation/Imath.git
+fi
+cmake -B build-imath -S Imath -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
+    -DANDROID_ABI=arm64-v8a \
+    -DANDROID_PLATFORM=android-${API_LEVEL} \
+    -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
+    -DBUILD_SHARED_LIBS=ON \
+    -DBUILD_TESTING=OFF
+ninja -C build-imath install
+
+echo "===> Building OpenEXR..."
+cd "${BUILD_TMP}"
+if [ ! -d "openexr" ]; then
+    git clone --depth 1 -b v3.2.4 https://github.com/AcademySoftwareFoundation/openexr.git
+fi
+cmake -B build-openexr -S openexr -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
+    -DANDROID_ABI=arm64-v8a \
+    -DANDROID_PLATFORM=android-${API_LEVEL} \
+    -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
+    -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr" \
+    -DBUILD_SHARED_LIBS=ON \
+    -DOPENEXR_INSTALL_TOOLS=OFF \
+    -DBUILD_TESTING=OFF
+ninja -C build-openexr install
+
+echo "===> Building OpenColorIO..."
+cd "${BUILD_TMP}"
+if [ ! -d "OpenColorIO" ]; then
+    git clone --depth 1 -b v2.3.2 https://github.com/AcademySoftwareFoundation/OpenColorIO.git
+fi
+cmake -B build-ocio -S OpenColorIO -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
+    -DANDROID_ABI=arm64-v8a \
+    -DANDROID_PLATFORM=android-${API_LEVEL} \
+    -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
+    -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr" \
+    -DBUILD_SHARED_LIBS=ON \
+    -DOCIO_BUILD_APPS=OFF \
+    -DOCIO_BUILD_TESTS=OFF \
+    -DOCIO_BUILD_GPU_TESTS=OFF \
+    -DOCIO_BUILD_PYTHON=OFF \
+    -DOCIO_BUILD_DOCS=OFF \
+    -DOCIO_INSTALL_EXT_PACKAGES=ALL
+ninja -C build-ocio install
+
+echo "===> Building OpenImageIO..."
+cd "${BUILD_TMP}"
+if [ ! -d "OpenImageIO" ]; then
+    git clone --depth 1 -b v2.5.12.0 https://github.com/AcademySoftwareFoundation/OpenImageIO.git
+fi
+cmake -B build-oiio -S OpenImageIO -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
+    -DANDROID_ABI=arm64-v8a \
+    -DANDROID_PLATFORM=android-${API_LEVEL} \
+    -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
+    -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr" \
+    -DBUILD_SHARED_LIBS=ON \
+    -DOIIO_BUILD_TESTS=OFF \
+    -DOIIO_BUILD_TOOLS=OFF \
+    -DUSE_PYTHON=OFF \
+    -DUSE_FFMPEG=OFF \
+    -DUSE_OPENGL=OFF \
+    -DUSE_LIBRAW=OFF \
+    -DUSE_OPENCV=OFF \
+    -DUSE_FREETYPE=OFF \
+    -DUSE_GIF=OFF \
+    -DUSE_HEIF=OFF \
+    -DUSE_WEBP=OFF \
+    -DUSE_DICOM=OFF \
+    -DUSE_FONTCONFIG=OFF \
+    -DSTOP_ON_WARNING=OFF
+ninja -C build-oiio install
 
 echo "===> Building FreeType..."
 cd "${BUILD_TMP}"
