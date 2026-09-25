@@ -130,7 +130,8 @@ fi
 # Patch BLI_subprocess.cc to bypass POSIX shm_open on Android
 if [ -f "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_subprocess.cc" ]; then
     python3 -c '
-p = "/source/blender/blenlib/intern/BLI_subprocess.cc"
+import sys
+p = sys.argv[1]
 with open(p, "r") as f:
     c = f.read()
 c = c.replace(
@@ -147,7 +148,7 @@ c = c.replace(
 )
 with open(p, "w") as f:
     f.write(c)
-'
+' "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_subprocess.cc"
 fi
 
 echo "===> Patching Blender CMake for native host code generators and dependencies..."
