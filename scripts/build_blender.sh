@@ -122,6 +122,33 @@ if [ -f "${BLENDER_SRC}/intern/dualcon/intern/octree.cpp" ]; then
     sed -i 's/Eigen::JacobiSVD<Eigen::Matrix3f, Options> svd = a.jacobiSvd<Options>();//' "${BLENDER_SRC}/intern/dualcon/intern/octree.cpp"
     sed -i 's/const int Options = Eigen::ComputeFullU | Eigen::ComputeFullV;/Eigen::JacobiSVD<Eigen::Matrix3f> svd(a, Eigen::ComputeFullU | Eigen::ComputeFullV);/' "${BLENDER_SRC}/intern/dualcon/intern/octree.cpp"
 fi
+# Patch BLI_mmap.cc for Android Bionic sigaction struct initialization
+if [ -f "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_mmap.cc" ]; then
+    sed -i 's/struct sigaction newact = {{nullptr}}, oldact = {{nullptr}};/struct sigaction newact = {}, oldact = {};/' "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_mmap.cc"
+fi
+
+# Patch BLI_subprocess.cc to bypass POSIX shm_open on Android
+if [ -f "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_subprocess.cc" ]; then
+    python3 -c '
+p = "/source/blender/blenlib/intern/BLI_subprocess.cc"
+with open(p, "r") as f:
+    c = f.read()
+c = c.replace(
+    "constexpr mode_t user_mode = S_IRUSR | S_IWUSR;\n  if (is_owner) {",
+    "#ifndef __ANDROID__\n  constexpr mode_t user_mode = S_IRUSR | S_IWUSR;\n  if (is_owner) {"
+)
+c = c.replace(
+    "  data_size_ = data_ ? size : 0;\n}",
+    "  data_size_ = data_ ? size : 0;\n#else\n  handle_ = -1;\n  data_ = nullptr;\n  data_size_ = 0;\n#endif\n}"
+)
+c = c.replace(
+    "CHECK(shm_unlink(name_.c_str()));",
+    "#ifndef __ANDROID__\n      CHECK(shm_unlink(name_.c_str()));\n#endif"
+)
+with open(p, "w") as f:
+    f.write(c)
+'
+fi
 
 echo "===> Patching Blender CMake for native host code generators and dependencies..."
 python3 -c '
