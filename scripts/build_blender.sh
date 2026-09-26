@@ -24,6 +24,16 @@ if [ -f "blender-deps-android-arm64.tar.gz" ]; then
     tar -xzf blender-deps-android-arm64.tar.gz -C "${SYSROOT_DIR}"
 fi
 
+echo "===> Ensuring Imath and OpenEXR headers are directly available in sysroot include..."
+mkdir -p "${SYSROOT_DIR}/usr/include/Imath" "${SYSROOT_DIR}/usr/include/OpenEXR"
+cp -r "${SYSROOT_DIR}/usr/include/Imath/"* "${SYSROOT_DIR}/usr/include/" 2>/dev/null || true
+cp -r "${SYSROOT_DIR}/usr/include/OpenEXR/"* "${SYSROOT_DIR}/usr/include/" 2>/dev/null || true
+mkdir -p "${TOOLCHAIN}/sysroot/usr/include/Imath" "${TOOLCHAIN}/sysroot/usr/include/OpenEXR"
+cp -r "${SYSROOT_DIR}/usr/include/Imath" "${TOOLCHAIN}/sysroot/usr/include/" 2>/dev/null || true
+cp -r "${SYSROOT_DIR}/usr/include/OpenEXR" "${TOOLCHAIN}/sysroot/usr/include/" 2>/dev/null || true
+cp -r "${SYSROOT_DIR}/usr/include/Imath/"* "${TOOLCHAIN}/sysroot/usr/include/" 2>/dev/null || true
+cp -r "${SYSROOT_DIR}/usr/include/OpenEXR/"* "${TOOLCHAIN}/sysroot/usr/include/" 2>/dev/null || true
+
 echo "===> Ensuring Vulkan & Shaderc pkg-config..."
 mkdir -p "${SYSROOT_DIR}/usr/lib/pkgconfig" "${SYSROOT_DIR}/usr/share/pkgconfig"
 cat << VEOF > "${SYSROOT_DIR}/usr/lib/pkgconfig/vulkan.pc"
@@ -239,8 +249,10 @@ p_unix = os.path.join(src, "build_files/cmake/platform/platform_unix.cmake")
 if os.path.exists(p_unix):
     with open(p_unix, "r") as f:
         c = f.read()
-    if "if(WITH_OPENEXR)\n  find_package_wrapper(OpenEXR REQUIRED)" not in c:
-        c = c.replace("find_package_wrapper(OpenEXR REQUIRED)", "if(WITH_OPENEXR)\n  find_package_wrapper(OpenEXR REQUIRED)\nendif()")
+    if "find_package_wrapper(OpenEXR REQUIRED)" in c and "WITH_OPENEXR" not in c:
+        c = c.replace("find_package_wrapper(OpenEXR REQUIRED)", "if(WITH_OPENEXR OR WITH_IMAGE_OPENEXR)\n  find_package_wrapper(OpenEXR REQUIRED)\nendif()")
+    elif "if(WITH_OPENEXR)\n  find_package_wrapper(OpenEXR REQUIRED)" in c:
+        c = c.replace("if(WITH_OPENEXR)\n  find_package_wrapper(OpenEXR REQUIRED)", "if(WITH_OPENEXR OR WITH_IMAGE_OPENEXR)\n  find_package_wrapper(OpenEXR REQUIRED)")
     if "if(WITH_OPENIMAGEIO)\n  find_package_wrapper(OpenImageIO REQUIRED)" not in c:
         c = c.replace("find_package_wrapper(OpenImageIO REQUIRED)", "if(WITH_OPENIMAGEIO)\n  find_package_wrapper(OpenImageIO REQUIRED)\nendif()")
     if "if(WITH_OPENCOLORIO)\n  find_package_wrapper(OpenColorIO 2.0.0 REQUIRED)" not in c:
@@ -284,6 +296,8 @@ endif()""")
   add_library(bf::dependencies::openexr ALIAS OpenEXR::OpenEXR)
 else()
   add_library(bf_deps_openexr INTERFACE)
+  target_include_directories(bf_deps_openexr INTERFACE "${SYSROOT_DIR}/usr/include" "${SYSROOT_DIR}/usr/include/OpenEXR" "${SYSROOT_DIR}/usr/include/Imath")
+  target_link_libraries(bf_deps_openexr INTERFACE -L${SYSROOT_DIR}/usr/lib -lOpenEXR -lOpenEXRCore -lImath -lIlmThread -lIex)
   add_library(bf::dependencies::openexr ALIAS bf_deps_openexr)
 endif()""")
     c = c.replace("add_library(bf::dependencies::opencolorio ALIAS OpenColorIO::OpenColorIO)",
@@ -406,10 +420,12 @@ if [ -z "${HOST_CC}" ]; then
 fi
 echo "Using host compilers: CC=${HOST_CC}, CXX=${HOST_CXX}"
 
-echo "===> Ensuring OpenImageIO and Imath headers are available for host tools..."
+echo "===> Ensuring OpenImageIO, Imath, and OpenEXR headers are available for host tools..."
 sudo cp -r "${SYSROOT_DIR}/usr/include/OpenImageIO" /usr/local/include/ 2>/dev/null || true
 sudo cp -r "${SYSROOT_DIR}/usr/include/Imath" /usr/local/include/ 2>/dev/null || true
+sudo cp -r "${SYSROOT_DIR}/usr/include/Imath/"* /usr/local/include/ 2>/dev/null || true
 sudo cp -r "${SYSROOT_DIR}/usr/include/OpenEXR" /usr/local/include/ 2>/dev/null || true
+sudo cp -r "${SYSROOT_DIR}/usr/include/OpenEXR/"* /usr/local/include/ 2>/dev/null || true
 
 echo "===> Building native host code generators (datatoc, shader_tool, makesdna, makesrna)..." 
 HOST_TOOLS_DIR="${BUILD_TMP}/build-host-tools"
@@ -429,6 +445,7 @@ cmake -B "${HOST_TOOLS_DIR}" -S "${BLENDER_SRC}" -G Ninja \
     -DWITH_OPENIMAGEIO=OFF \
     -DWITH_OPENCOLORIO=OFF \
     -DWITH_OPENEXR=OFF \
+    -DWITH_IMAGE_OPENEXR=OFF \
     -DWITH_OPENVDB=OFF \
     -DWITH_ALEMBIC=OFF \
     -DWITH_USD=OFF \
@@ -538,8 +555,14 @@ cmake -B build-blender -S blender -G Ninja \
     -DEigen3_DIR="${SYSROOT_DIR}/usr/lib/cmake/eigen3" \
     -DImath_DIR="${IMATH_DIR}" \
     -DOpenEXR_DIR="${OPENEXR_DIR}" \
+    -DWITH_OPENEXR=ON \
+    -DWITH_IMAGE_OPENEXR=ON \
+    -DOPENEXR_ROOT="${SYSROOT_DIR}/usr" \
+    -DIMATH_ROOT="${SYSROOT_DIR}/usr" \
     -DOpenColorIO_DIR="${OCIO_DIR}" \
+    -DWITH_OPENCOLORIO=ON \
     -DOpenImageIO_DIR="${OIIO_DIR}" \
+    -DWITH_OPENIMAGEIO=ON \
     -DSSE2NEON_ROOT_DIR="${SYSROOT_DIR}/usr" \
     -DSSE2NEON_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
     -DWITH_GMP=OFF \
@@ -608,6 +631,10 @@ fi
 # Copy assets
 cp -r ${BLENDER_SRC}/release/datafiles/* "${APK_DIR}/assets/datafiles/" || true
 cp -r ${BLENDER_SRC}/release/scripts/* "${APK_DIR}/assets/scripts/" || true
+if [ -d "${SYSROOT_DIR}/usr/lib/python3.12" ]; then
+    mkdir -p "${APK_DIR}/assets/python/lib"
+    cp -r "${SYSROOT_DIR}/usr/lib/python3.12" "${APK_DIR}/assets/python/lib/" 2>/dev/null || true
+fi
 
 # Assemble APK using android SDK build tools
 AAPT2=$(find /usr/local/lib/android/sdk/build-tools -name aapt2 | head -n 1)
@@ -623,6 +650,7 @@ $AAPT2 link -o "${BUILD_TMP}/unaligned.apk" \
 
 cd "${APK_DIR}"
 zip -u -r "${BUILD_TMP}/unaligned.apk" lib/
+cd "${BASE_DIR}"
 
 $ZIPALIGN -f -p 4 "${BUILD_TMP}/unaligned.apk" "${BASE_DIR}/Blender-Android-arm64.apk"
 
