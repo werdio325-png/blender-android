@@ -72,7 +72,7 @@ if [ -z "${SHADERC_LIB}" ]; then
         cd "${ANDROID_NDK_ROOT}/sources/third_party/shaderc"
         ${ANDROID_NDK_ROOT}/ndk-build NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk APP_ABI=arm64-v8a APP_STL=c++_shared APP_PLATFORM=android-29 -j$(nproc) || true
         cd "${BASE_DIR}"
-        SHADERC_LIB=$(find "${ANDROID_NDK_ROOT}/sources/third_party/shaderc" -name "libshaderc*.a" 2>/dev/null | grep -i "arm64" | head -n 1 || true)
+        SHADERC_LIB=$(find "${ANDROID_NDK_ROOT}/sources/third_party/shaderc" -name "libshaderc.a" 2>/dev/null | grep -i "arm64" | head -n 1 || true)
     fi
 fi
 
@@ -80,6 +80,7 @@ if [ -n "${SHADERC_LIB}" ]; then
     echo "Found Shaderc library at: ${SHADERC_LIB}"
     cp -f "${SHADERC_LIB}" "${SYSROOT_DIR}/usr/lib/libshaderc.a"
     cp -f "${SHADERC_LIB}" "${SYSROOT_DIR}/usr/lib/libshaderc_combined.a"
+    find "${ANDROID_NDK_ROOT}/sources/third_party/shaderc" -name "*.a" -path "*/arm64-v8a/*" -exec cp -f {} "${SYSROOT_DIR}/usr/lib/" \; 2>/dev/null || true
 else
     ${TOOLCHAIN}/bin/llvm-ar cr "${SYSROOT_DIR}/usr/lib/libshaderc.a" 2>/dev/null || true
     cp -f "${SYSROOT_DIR}/usr/lib/libshaderc.a" "${SYSROOT_DIR}/usr/lib/libshaderc_combined.a"
@@ -188,6 +189,11 @@ fi
 if [ -f "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_graphics_pipeline.hh" ]; then
     sed -i 's/VkRenderingInputAttachmentIndexInfo vk_rendering_input_attachment_index_info_;/VkRenderingInputAttachmentIndexInfoKHR vk_rendering_input_attachment_index_info_;/' "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_graphics_pipeline.hh" || true
     sed -i 's/VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO;/VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO_KHR;/g' "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_graphics_pipeline.hh" || true
+fi
+
+# Patch vk_shader_compiler.cc for NDK Shaderc compatibility (SetMaxIdBound is only in newer shaderc)
+if [ -f "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_shader_compiler.cc" ]; then
+    sed -i 's/.*SetMaxIdBound.*/\/\/ &/' "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_shader_compiler.cc" || true
 fi
 
 # Add ANativeActivity entry point to creator.cc and link android log libraries
