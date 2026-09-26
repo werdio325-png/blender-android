@@ -206,8 +206,14 @@ if [ -f "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_shader_compiler.cc" ]; then
     sed -i 's/.*SetMaxIdBound.*/\/\/ &/' "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_shader_compiler.cc" || true
 fi
 
+# Patch MOD_grease_pencil_build.cc for TBB parallel_sort const comparator compatibility
+if [ -f "${BLENDER_SRC}/source/blender/modifiers/intern/MOD_grease_pencil_build.cc" ]; then
+    sed -i 's/Pair &a, Pair &b/const Pair \&a, const Pair \&b/g' "${BLENDER_SRC}/source/blender/modifiers/intern/MOD_grease_pencil_build.cc"
+fi
+
 # Add ANativeActivity entry point to creator.cc and link android log libraries
 if [ -f "${BLENDER_SRC}/source/creator/creator.cc" ]; then
+    sed -i 's/int main(int argc,/int blender_main(int argc,/' "${BLENDER_SRC}/source/creator/creator.cc"
     cat << 'AEOF' >> "${BLENDER_SRC}/source/creator/creator.cc"
 
 #ifdef __ANDROID__
@@ -215,8 +221,8 @@ if [ -f "${BLENDER_SRC}/source/creator/creator.cc" ]; then
 #include <pthread.h>
 
 static void *android_blender_thread_func(void *arg) {
-    char *argv[] = {(char*)"blender", nullptr};
-    main(1, argv);
+    const char *argv[] = {"blender", nullptr};
+    blender_main(1, argv);
     return nullptr;
 }
 
@@ -224,6 +230,10 @@ extern "C" JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* activity, vo
     pthread_t thread;
     pthread_create(&thread, nullptr, android_blender_thread_func, nullptr);
     pthread_detach(thread);
+}
+#else
+int main(int argc, const char **argv) {
+    return blender_main(argc, argv);
 }
 #endif
 AEOF
@@ -609,6 +619,7 @@ mkdir -p "${APK_DIR}/lib/arm64-v8a" "${APK_DIR}/assets/datafiles" "${APK_DIR}/as
 # Copy libraries
 cp -P ${SYSROOT_DIR}/usr/lib/*.so* "${APK_DIR}/lib/arm64-v8a/" || true
 cp -P ${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so "${APK_DIR}/lib/arm64-v8a/" 2>/dev/null || true
+find "${ANDROID_NDK_ROOT}" -name "libc++_shared.so" -path "*/arm64*/*" -exec cp -P {} "${APK_DIR}/lib/arm64-v8a/" \; 2>/dev/null || true
 find "${APK_DIR}/lib/arm64-v8a" -type l -exec cp --remove-destination "$(readlink -f {})" {} \; 2>/dev/null || true
 
 # Copy Blender shared libs and main binary
