@@ -402,9 +402,8 @@ if os.path.exists(p_unix):
         c = c.replace("if(WITH_OPENEXR)\n  find_package_wrapper(OpenEXR REQUIRED)", "if(WITH_OPENEXR OR WITH_IMAGE_OPENEXR)\n  find_package_wrapper(OpenEXR REQUIRED)")
     if "if(WITH_OPENIMAGEIO)\n  find_package_wrapper(OpenImageIO REQUIRED)" not in c:
         c = c.replace("find_package_wrapper(OpenImageIO REQUIRED)", "if(WITH_OPENIMAGEIO)\n  find_package_wrapper(OpenImageIO REQUIRED)\nendif()")
-    if "if(WITH_OPENCOLORIO)
-  find_package_wrapper(OpenColorIO 2.0.0 REQUIRED)" not in c:
-        c = c.replace("find_package_wrapper(OpenColorIO 2.0.0 REQUIRED)", "if(WITH_OPENCOLORIO)\\n  find_package_wrapper(OpenColorIO 2.0.0 REQUIRED)\nendif()")
+    if "WITH_OPENCOLORIO" not in c:
+        c = c.replace("find_package_wrapper(OpenColorIO 2.0.0 REQUIRED)", "if(WITH_OPENCOLORIO)\n  find_package_wrapper(OpenColorIO 2.0.0 REQUIRED)\nendif()")
     if "WITH_CROSSCOMPILED_TOOLS" not in c:
         c += """
 if(WITH_CROSSCOMPILED_TOOLS)
