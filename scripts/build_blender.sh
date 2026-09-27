@@ -234,7 +234,7 @@ if [ -f "${BLENDER_SRC}/source/blender/modifiers/intern/MOD_grease_pencil_build.
     sed -i 's/Pair &a, Pair &b/const Pair \&a, const Pair \&b/g' "${BLENDER_SRC}/source/blender/modifiers/intern/MOD_grease_pencil_build.cc"
 fi
 
-# Add ANativeActivity entry point to creator.cc and link android log libraries
+# Add ANativeActivity entry point and Vulkan NDK compatibility stubs to creator.cc
 if [ -f "${BLENDER_SRC}/source/creator/creator.cc" ]; then
     sed -i 's/int main(int argc,/int blender_main(int argc,/' "${BLENDER_SRC}/source/creator/creator.cc"
     cat << 'AEOF' >> "${BLENDER_SRC}/source/creator/creator.cc"
@@ -242,6 +242,8 @@ if [ -f "${BLENDER_SRC}/source/creator/creator.cc" ]; then
 #ifdef __ANDROID__
 #include <android/native_activity.h>
 #include <pthread.h>
+#include <dlfcn.h>
+#include <vulkan/vulkan.h>
 
 static void *android_blender_thread_func(void *arg) {
     const char *argv[] = {"blender", nullptr};
@@ -253,6 +255,110 @@ extern "C" JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* activity, vo
     pthread_t thread;
     pthread_create(&thread, nullptr, android_blender_thread_func, nullptr);
     pthread_detach(thread);
+}
+
+extern "C" {
+
+__attribute__((visibility("default")))
+VKAPI_ATTR VkResult VKAPI_CALL vkWaitSemaphores(
+    VkDevice device,
+    const VkSemaphoreWaitInfo* pWaitInfo,
+    uint64_t timeout)
+{
+    typedef VkResult (VKAPI_PTR *PFN_vkWaitSemaphores_t)(VkDevice, const VkSemaphoreWaitInfo*, uint64_t);
+    static PFN_vkWaitSemaphores_t fn = nullptr;
+    if (!fn) {
+        fn = (PFN_vkWaitSemaphores_t)vkGetDeviceProcAddr(device, "vkWaitSemaphores");
+        if (!fn) fn = (PFN_vkWaitSemaphores_t)vkGetDeviceProcAddr(device, "vkWaitSemaphoresKHR");
+        if (!fn) fn = (PFN_vkWaitSemaphores_t)dlsym(RTLD_DEFAULT, "vkWaitSemaphores");
+        if (!fn) fn = (PFN_vkWaitSemaphores_t)dlsym(RTLD_DEFAULT, "vkWaitSemaphoresKHR");
+    }
+    if (fn) {
+        return fn(device, pWaitInfo, timeout);
+    }
+    return VK_SUCCESS;
+}
+
+__attribute__((visibility("default")))
+VKAPI_ATTR VkResult VKAPI_CALL vkGetSemaphoreCounterValue(
+    VkDevice device,
+    VkSemaphore semaphore,
+    uint64_t* pValue)
+{
+    typedef VkResult (VKAPI_PTR *PFN_vkGetSemaphoreCounterValue_t)(VkDevice, VkSemaphore, uint64_t*);
+    static PFN_vkGetSemaphoreCounterValue_t fn = nullptr;
+    if (!fn) {
+        fn = (PFN_vkGetSemaphoreCounterValue_t)vkGetDeviceProcAddr(device, "vkGetSemaphoreCounterValue");
+        if (!fn) fn = (PFN_vkGetSemaphoreCounterValue_t)vkGetDeviceProcAddr(device, "vkGetSemaphoreCounterValueKHR");
+        if (!fn) fn = (PFN_vkGetSemaphoreCounterValue_t)dlsym(RTLD_DEFAULT, "vkGetSemaphoreCounterValue");
+        if (!fn) fn = (PFN_vkGetSemaphoreCounterValue_t)dlsym(RTLD_DEFAULT, "vkGetSemaphoreCounterValueKHR");
+    }
+    if (fn) {
+        return fn(device, semaphore, pValue);
+    }
+    if (pValue) *pValue = 0;
+    return VK_SUCCESS;
+}
+
+__attribute__((visibility("default")))
+VKAPI_ATTR void VKAPI_CALL vkGetDeviceBufferMemoryRequirements(
+    VkDevice device,
+    const VkDeviceBufferMemoryRequirements* pInfo,
+    VkMemoryRequirements2* pMemoryRequirements)
+{
+    typedef void (VKAPI_PTR *PFN_vkGetDeviceBufferMemoryRequirements_t)(VkDevice, const VkDeviceBufferMemoryRequirements*, VkMemoryRequirements2*);
+    static PFN_vkGetDeviceBufferMemoryRequirements_t fn = nullptr;
+    if (!fn) {
+        fn = (PFN_vkGetDeviceBufferMemoryRequirements_t)vkGetDeviceProcAddr(device, "vkGetDeviceBufferMemoryRequirements");
+        if (!fn) fn = (PFN_vkGetDeviceBufferMemoryRequirements_t)vkGetDeviceProcAddr(device, "vkGetDeviceBufferMemoryRequirementsKHR");
+        if (!fn) fn = (PFN_vkGetDeviceBufferMemoryRequirements_t)dlsym(RTLD_DEFAULT, "vkGetDeviceBufferMemoryRequirements");
+        if (!fn) fn = (PFN_vkGetDeviceBufferMemoryRequirements_t)dlsym(RTLD_DEFAULT, "vkGetDeviceBufferMemoryRequirementsKHR");
+    }
+    if (fn) {
+        fn(device, pInfo, pMemoryRequirements);
+    }
+}
+
+__attribute__((visibility("default")))
+VKAPI_ATTR void VKAPI_CALL vkGetDeviceImageMemoryRequirements(
+    VkDevice device,
+    const VkDeviceImageMemoryRequirements* pInfo,
+    VkMemoryRequirements2* pMemoryRequirements)
+{
+    typedef void (VKAPI_PTR *PFN_vkGetDeviceImageMemoryRequirements_t)(VkDevice, const VkDeviceImageMemoryRequirements*, VkMemoryRequirements2*);
+    static PFN_vkGetDeviceImageMemoryRequirements_t fn = nullptr;
+    if (!fn) {
+        fn = (PFN_vkGetDeviceImageMemoryRequirements_t)vkGetDeviceProcAddr(device, "vkGetDeviceImageMemoryRequirements");
+        if (!fn) fn = (PFN_vkGetDeviceImageMemoryRequirements_t)vkGetDeviceProcAddr(device, "vkGetDeviceImageMemoryRequirementsKHR");
+        if (!fn) fn = (PFN_vkGetDeviceImageMemoryRequirements_t)dlsym(RTLD_DEFAULT, "vkGetDeviceImageMemoryRequirements");
+        if (!fn) fn = (PFN_vkGetDeviceImageMemoryRequirements_t)dlsym(RTLD_DEFAULT, "vkGetDeviceImageMemoryRequirementsKHR");
+    }
+    if (fn) {
+        fn(device, pInfo, pMemoryRequirements);
+    }
+}
+
+__attribute__((visibility("default")))
+VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfaceCapabilities2KHR(
+    VkPhysicalDevice physicalDevice,
+    const VkPhysicalDeviceSurfaceInfo2KHR* pSurfaceInfo,
+    VkSurfaceCapabilities2KHR* pSurfaceCapabilities)
+{
+    typedef VkResult (VKAPI_PTR *PFN_vkGetPhysicalDeviceSurfaceCapabilities2KHR_t)(VkPhysicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR*, VkSurfaceCapabilities2KHR*);
+    static PFN_vkGetPhysicalDeviceSurfaceCapabilities2KHR_t fn = nullptr;
+    if (!fn) {
+        fn = (PFN_vkGetPhysicalDeviceSurfaceCapabilities2KHR_t)dlsym(RTLD_DEFAULT, "vkGetPhysicalDeviceSurfaceCapabilities2KHR");
+    }
+    if (fn) {
+        return fn(physicalDevice, pSurfaceInfo, pSurfaceCapabilities);
+    }
+    if (pSurfaceInfo && pSurfaceCapabilities) {
+        return vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+            physicalDevice, pSurfaceInfo->surface, &pSurfaceCapabilities->surfaceCapabilities);
+    }
+    return VK_ERROR_FEATURE_NOT_PRESENT;
+}
+
 }
 #else
 int main(int argc, const char **argv) {
@@ -266,7 +372,7 @@ if [ -f "${BLENDER_SRC}/source/creator/CMakeLists.txt" ]; then
     cat << 'CEOF' >> "${BLENDER_SRC}/source/creator/CMakeLists.txt"
 
 if(ANDROID)
-  target_link_libraries(blender PRIVATE android log)
+  target_link_libraries(blender PRIVATE android log dl vulkan)
 endif()
 CEOF
 fi
@@ -285,6 +391,9 @@ if os.path.exists(p_unix):
     if "pkg_check_modules(SHADERC REQUIRED shaderc)" in c:
         rep_shaderc = "set(SHADERC_INCLUDE_DIRS \"" + os.path.join(src, "../../sysroot-android-arm64/usr/include") + "\")\n    set(SHADERC_LIBRARIES \"" + os.path.join(src, "../../sysroot-android-arm64/usr/lib/libshaderc.a") + "\")\n    set(SHADERC_FOUND TRUE)"
         c = c.replace("pkg_check_modules(SHADERC REQUIRED shaderc)", rep_shaderc)
+    if "PLATFORM_LINKFLAGS_SYMBOL_HIDING" in c:
+        c = c.replace("set(PLATFORM_LINKFLAGS_SYMBOL_HIDING \"-Wl,--version-script='${PLATFORM_SYMBOLS_MAP}'\")",
+                      "if(ANDROID)\n  set(PLATFORM_LINKFLAGS_SYMBOL_HIDING \"\")\nelse()\n  set(PLATFORM_LINKFLAGS_SYMBOL_HIDING \"-Wl,--version-script='${PLATFORM_SYMBOLS_MAP}'\")\nendif()")
     if "find_package_wrapper(OpenEXR REQUIRED)" in c and "WITH_OPENEXR" not in c:
         c = c.replace("find_package_wrapper(OpenEXR REQUIRED)", "if(WITH_OPENEXR OR WITH_IMAGE_OPENEXR)\n  find_package_wrapper(OpenEXR REQUIRED)\nendif()")
     elif "if(WITH_OPENEXR)\n  find_package_wrapper(OpenEXR REQUIRED)" in c:
@@ -350,6 +459,16 @@ endif()""")
     c = c.replace("target_link_libraries(bf_deps_optional_shaderc INTERFACE ${SHADERC_LIBRARIES})", rep_target)
     with open(p_dep, "w") as f:
         f.write(c)
+
+# 2b. Patch symbols_unix.map to keep Android and Vulkan symbols exported
+p_map = os.path.join(src, "source/creator/symbols_unix.map")
+if os.path.exists(p_map):
+    with open(p_map, "r") as f:
+        mc = f.read()
+    if "ANativeActivity_onCreate" not in mc:
+        mc = mc.replace("global:\n", "global:\n  ANativeActivity_onCreate;\n  vk*;\n  Java_*;\n  android_*;\n  blender_main;\n")
+        with open(p_map, "w") as f:
+            f.write(mc)
 
 # 3. source/blender/CMakeLists.txt: skip datatoc and shader_tool subdirectories
 p_blender = os.path.join(src, "source/blender/CMakeLists.txt")
@@ -697,10 +816,10 @@ if [ -n "${PYTHON_STDLIB}" ]; then
 fi
 
 # Assemble APK using android SDK build tools
-AAPT2=$(find /usr/local/lib/android/sdk/build-tools -name aapt2 | head -n 1)
-ANDROID_JAR=$(find /usr/local/lib/android/sdk/platforms -name android.jar | head -n 1)
-ZIPALIGN=$(find /usr/local/lib/android/sdk/build-tools -name zipalign | head -n 1)
-APKSIGNER=$(find /usr/local/lib/android/sdk/build-tools -name apksigner | head -n 1)
+AAPT2=$(find /usr/local/lib/android/sdk/build-tools -name aapt2 2>/dev/null | sort -V | tail -n 1)
+ANDROID_JAR=$(find /usr/local/lib/android/sdk/platforms -name android.jar 2>/dev/null | sort -V | tail -n 1)
+ZIPALIGN=$(find /usr/local/lib/android/sdk/build-tools -name zipalign 2>/dev/null | sort -V | tail -n 1)
+APKSIGNER=$(find /usr/local/lib/android/sdk/build-tools -name apksigner 2>/dev/null | sort -V | tail -n 1)
 
 $AAPT2 link -o "${BUILD_TMP}/unaligned.apk" \
     -I "$ANDROID_JAR" \
