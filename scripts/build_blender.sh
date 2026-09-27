@@ -6,6 +6,7 @@ SYSROOT_DIR="${BASE_DIR}/sysroot-android-arm64"
 BUILD_TMP="${BASE_DIR}/build-tmp"
 BLENDER_SRC="${BUILD_TMP}/blender"
 API_LEVEL="29"
+export BASE_DIR SYSROOT_DIR BUILD_TMP BLENDER_SRC API_LEVEL
 
 if [ -z "${ANDROID_NDK_ROOT:-}" ]; then
     if [ -d "/usr/local/lib/android/sdk/ndk/27.3.13750724" ]; then
@@ -378,10 +379,11 @@ CEOF
 fi
 
 echo "===> Patching Blender CMake for native host code generators and dependencies..."
-python3 -c '
+python3 << 'PYEOF'
 import os
 
-src = "'"${BLENDER_SRC}"'"
+src = os.environ.get("BLENDER_SRC", "")
+sysroot = os.environ.get("SYSROOT_DIR", "")
 
 # 1. Wrap OpenEXR, OpenImageIO, OpenColorIO in platform_unix.cmake so host tools build does not fail
 p_unix = os.path.join(src, "build_files/cmake/platform/platform_unix.cmake")
@@ -389,7 +391,7 @@ if os.path.exists(p_unix):
     with open(p_unix, "r") as f:
         c = f.read()
     if "pkg_check_modules(SHADERC REQUIRED shaderc)" in c:
-        rep_shaderc = "set(SHADERC_INCLUDE_DIRS \"" + os.path.join(src, "../../sysroot-android-arm64/usr/include") + "\")\n    set(SHADERC_LIBRARIES \"" + os.path.join(src, "../../sysroot-android-arm64/usr/lib/libshaderc.a") + "\")\n    set(SHADERC_FOUND TRUE)"
+        rep_shaderc = 'set(SHADERC_INCLUDE_DIRS "' + os.path.join(sysroot, "usr/include") + '")\n    set(SHADERC_LIBRARIES "' + os.path.join(sysroot, "usr/lib/libshaderc.a") + '")\n    set(SHADERC_FOUND TRUE)'
         c = c.replace("pkg_check_modules(SHADERC REQUIRED shaderc)", rep_shaderc)
     if "PLATFORM_LINKFLAGS_SYMBOL_HIDING" in c:
         c = c.replace("set(PLATFORM_LINKFLAGS_SYMBOL_HIDING \"-Wl,--version-script='${PLATFORM_SYMBOLS_MAP}'\")",
@@ -400,8 +402,9 @@ if os.path.exists(p_unix):
         c = c.replace("if(WITH_OPENEXR)\n  find_package_wrapper(OpenEXR REQUIRED)", "if(WITH_OPENEXR OR WITH_IMAGE_OPENEXR)\n  find_package_wrapper(OpenEXR REQUIRED)")
     if "if(WITH_OPENIMAGEIO)\n  find_package_wrapper(OpenImageIO REQUIRED)" not in c:
         c = c.replace("find_package_wrapper(OpenImageIO REQUIRED)", "if(WITH_OPENIMAGEIO)\n  find_package_wrapper(OpenImageIO REQUIRED)\nendif()")
-    if "if(WITH_OPENCOLORIO)\n  find_package_wrapper(OpenColorIO 2.0.0 REQUIRED)" not in c:
-        c = c.replace("find_package_wrapper(OpenColorIO 2.0.0 REQUIRED)", "if(WITH_OPENCOLORIO)\n  find_package_wrapper(OpenColorIO 2.0.0 REQUIRED)\nendif()")
+    if "if(WITH_OPENCOLORIO)
+  find_package_wrapper(OpenColorIO 2.0.0 REQUIRED)" not in c:
+        c = c.replace("find_package_wrapper(OpenColorIO 2.0.0 REQUIRED)", "if(WITH_OPENCOLORIO)\\n  find_package_wrapper(OpenColorIO 2.0.0 REQUIRED)\nendif()")
     if "WITH_CROSSCOMPILED_TOOLS" not in c:
         c += """
 if(WITH_CROSSCOMPILED_TOOLS)
@@ -452,10 +455,9 @@ else()
   add_library(bf_deps_opencolorio INTERFACE)
   add_library(bf::dependencies::opencolorio ALIAS bf_deps_opencolorio)
 endif()""")
-    sysroot = os.path.abspath(os.path.join(src, "../../sysroot-android-arm64"))
     shaderc_a = os.path.join(sysroot, "usr/lib/libshaderc.a")
     sysroot_lib = os.path.join(sysroot, "usr/lib")
-    rep_target = "target_link_directories(bf_deps_optional_shaderc INTERFACE \"" + sysroot_lib + "\")\n  target_link_libraries(bf_deps_optional_shaderc INTERFACE \"" + shaderc_a + "\")"
+    rep_target = 'target_link_directories(bf_deps_optional_shaderc INTERFACE "' + sysroot_lib + '")\n  target_link_libraries(bf_deps_optional_shaderc INTERFACE "' + shaderc_a + '")'
     c = c.replace("target_link_libraries(bf_deps_optional_shaderc INTERFACE ${SHADERC_LIBRARIES})", rep_target)
     with open(p_dep, "w") as f:
         f.write(c)
@@ -528,7 +530,7 @@ if os.path.exists(p):
                       "target_link_libraries(makesrna PRIVATE bf::dependencies::fmt)\nendif()")
         with open(p, "w") as f:
             f.write(c)
-'
+PYEOF
 
 echo "===> Ensuring OpenImageIO namespace compatibility for Blender..."
 if [ -f "${SYSROOT_DIR}/usr/include/OpenImageIO/oiioversion.h" ]; then
