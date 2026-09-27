@@ -417,6 +417,7 @@ echo "*disabled*" > Modules/Setup.local
 echo "_ctypes" >> Modules/Setup.local
 echo "_ctypes_test" >> Modules/Setup.local
 echo "_tkinter" >> Modules/Setup.local
+echo "_lzma" >> Modules/Setup.local
 rm -rf build-android
 mkdir -p build-android
 cd build-android
@@ -434,6 +435,7 @@ BUILD_PYTHON="$(command -v python3.13 || command -v python3)"
     CFLAGS="${CFLAGS} -D__BIONIC_NO_PAGE_SIZE_MACRO" \
     LDFLAGS="${LDFLAGS}" \
     py_cv_module__ctypes=n/a \
+    py_cv_module__lzma=n/a \
     ac_cv_buggy_getaddrinfo=no \
     ac_cv_file__dev_ptmx=no \
     ac_cv_file__dev_ptc=no
