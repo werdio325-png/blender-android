@@ -248,12 +248,19 @@ cd "${BUILD_TMP}"
 if [ ! -d "openexr" ]; then
     git clone --depth 1 -b v3.2.4 https://github.com/AcademySoftwareFoundation/openexr.git
 fi
+if [ -d "${SYSROOT_DIR}/usr/lib64" ]; then
+    cp -r "${SYSROOT_DIR}/usr/lib64/"* "${SYSROOT_DIR}/usr/lib/" 2>/dev/null || true
+fi
+IMATH_DIR=$(find "${SYSROOT_DIR}/usr" -name "ImathConfig.cmake" | head -n 1 | xargs -r dirname || true)
+
 cmake -B build-openexr -S openexr -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
     -DANDROID_ABI=arm64-v8a \
     -DANDROID_PLATFORM=android-${API_LEVEL} \
     -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
-    -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr" \
+    -DCMAKE_PREFIX_PATH="${SYSROOT_DIR}/usr;${IMATH_DIR}" \
+    -DImath_DIR="${IMATH_DIR}" \
+    -DOPENEXR_FORCE_INTERNAL_DEFLATE=ON \
     -DBUILD_SHARED_LIBS=ON \
     -DOPENEXR_INSTALL_TOOLS=OFF \
     -DBUILD_TESTING=OFF
