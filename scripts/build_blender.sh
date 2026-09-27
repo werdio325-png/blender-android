@@ -49,7 +49,6 @@ Libs: -L${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL} -lvulkan
 Cflags: -I${TOOLCHAIN}/sysroot/usr/include
 VEOF
 
-if [ ! -f "${SYSROOT_DIR}/usr/lib/pkgconfig/shaderc.pc" ]; then
 cat << SEOF > "${SYSROOT_DIR}/usr/lib/pkgconfig/shaderc.pc"
 prefix=${SYSROOT_DIR}/usr
 exec_prefix=\${prefix}
@@ -62,7 +61,6 @@ Version: 2024.1
 Libs: -L\${libdir} -lshaderc
 Cflags: -I\${includedir}
 SEOF
-fi
 
 echo "===> Setting up Shaderc headers and libraries for Android ARM64..."
 mkdir -p "${SYSROOT_DIR}/usr/include/shaderc" "${SYSROOT_DIR}/usr/lib"
@@ -75,26 +73,51 @@ fi
 mkdir -p "${TOOLCHAIN}/sysroot/usr/include/shaderc"
 cp -r "${SYSROOT_DIR}/usr/include/shaderc"/* "${TOOLCHAIN}/sysroot/usr/include/shaderc/" 2>/dev/null || true
 
-SHADERC_LIB=$(find "${ANDROID_NDK_ROOT}" -name "libshaderc.a" -o -name "libshaderc_combined.a" 2>/dev/null | grep -i "arm64" | head -n 1 || true)
-if [ -z "${SHADERC_LIB}" ]; then
-    if [ -d "${ANDROID_NDK_ROOT}/sources/third_party/shaderc" ]; then
-        echo "Building Shaderc for Android ARM64 via ndk-build..."
-        cd "${ANDROID_NDK_ROOT}/sources/third_party/shaderc"
-        ${ANDROID_NDK_ROOT}/ndk-build NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk APP_ABI=arm64-v8a APP_STL=c++_shared APP_PLATFORM=android-29 -j$(nproc) || true
-        cd "${BASE_DIR}"
-        SHADERC_LIB=$(find "${ANDROID_NDK_ROOT}/sources/third_party/shaderc" -name "libshaderc.a" 2>/dev/null | grep -i "arm64" | head -n 1 || true)
+if [ -d "${ANDROID_NDK_ROOT}/sources/third_party/shaderc" ]; then
+    echo "Building Shaderc for Android ARM64 via ndk-build..."
+    cd "${ANDROID_NDK_ROOT}/sources/third_party/shaderc"
+    ${ANDROID_NDK_ROOT}/ndk-build NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk APP_ABI=arm64-v8a APP_STL=c++_shared APP_PLATFORM=android-29 libshaderc_combined -j$(nproc) || true
+    ${ANDROID_NDK_ROOT}/ndk-build NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk APP_ABI=arm64-v8a APP_STL=c++_shared APP_PLATFORM=android-29 -j$(nproc) || true
+    cd "${BASE_DIR}"
+fi
+
+echo "===> Combining and installing Shaderc libraries..."
+SHADERC_OBJ_DIR=$(mktemp -d)
+idx=0
+find "${ANDROID_NDK_ROOT}/sources/third_party/shaderc" -name "*.a" -path "*/arm64-v8a/*" | while read -r arc; do
+    idx=$((idx+1))
+    sub="${SHADERC_OBJ_DIR}/${idx}"
+    mkdir -p "${sub}"
+    (cd "${sub}" && ${TOOLCHAIN}/bin/llvm-ar x "${arc}" 2>/dev/null || true)
+done
+OBJ_FILES=$(find "${SHADERC_OBJ_DIR}" -name "*.o" 2>/dev/null || true)
+if [ -n "${OBJ_FILES}" ]; then
+    ${TOOLCHAIN}/bin/llvm-ar rcs "${SYSROOT_DIR}/usr/lib/libshaderc.a" ${OBJ_FILES}
+    cp -f "${SYSROOT_DIR}/usr/lib/libshaderc.a" "${SYSROOT_DIR}/usr/lib/libshaderc_combined.a"
+fi
+rm -rf "${SHADERC_OBJ_DIR}"
+
+if [ ! -f "${SYSROOT_DIR}/usr/lib/libshaderc.a" ]; then
+    SHADERC_FALLBACK=$(find "${ANDROID_NDK_ROOT}" -name "libshaderc*.a" 2>/dev/null | grep -i "arm64" | head -n 1 || true)
+    if [ -n "${SHADERC_FALLBACK}" ]; then
+        cp -f "${SHADERC_FALLBACK}" "${SYSROOT_DIR}/usr/lib/libshaderc.a"
+        cp -f "${SHADERC_FALLBACK}" "${SYSROOT_DIR}/usr/lib/libshaderc_combined.a"
     fi
 fi
 
-if [ -n "${SHADERC_LIB}" ]; then
-    echo "Found Shaderc library at: ${SHADERC_LIB}"
-    cp -f "${SHADERC_LIB}" "${SYSROOT_DIR}/usr/lib/libshaderc.a"
-    cp -f "${SHADERC_LIB}" "${SYSROOT_DIR}/usr/lib/libshaderc_combined.a"
-    find "${ANDROID_NDK_ROOT}/sources/third_party/shaderc" -name "*.a" -path "*/arm64-v8a/*" -exec cp -f {} "${SYSROOT_DIR}/usr/lib/" \; 2>/dev/null || true
-else
-    ${TOOLCHAIN}/bin/llvm-ar cr "${SYSROOT_DIR}/usr/lib/libshaderc.a" 2>/dev/null || true
-    cp -f "${SYSROOT_DIR}/usr/lib/libshaderc.a" "${SYSROOT_DIR}/usr/lib/libshaderc_combined.a"
-fi
+find "${ANDROID_NDK_ROOT}/sources/third_party/shaderc" -name "*.a" -path "*/arm64-v8a/*" -exec cp -f {} "${SYSROOT_DIR}/usr/lib/" \; 2>/dev/null || true
+
+for d in "${TOOLCHAIN}/sysroot/usr/lib" \
+         "${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android" \
+         "${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL}"; do
+    mkdir -p "$d"
+    cp -f "${SYSROOT_DIR}/usr/lib/libshaderc"* "$d/" 2>/dev/null || true
+    cp -f "${SYSROOT_DIR}/usr/lib/libglslang"* "$d/" 2>/dev/null || true
+    cp -f "${SYSROOT_DIR}/usr/lib/libSPIRV"* "$d/" 2>/dev/null || true
+    cp -f "${SYSROOT_DIR}/usr/lib/libOGLCompiler"* "$d/" 2>/dev/null || true
+    cp -f "${SYSROOT_DIR}/usr/lib/libOSDependent"* "$d/" 2>/dev/null || true
+    cp -f "${SYSROOT_DIR}/usr/lib/libHLSL"* "$d/" 2>/dev/null || true
+done
 
 export PKG_CONFIG_PATH="${SYSROOT_DIR}/usr/lib/pkgconfig:${SYSROOT_DIR}/usr/share/pkgconfig:${PKG_CONFIG_PATH:-}"
 
@@ -259,6 +282,9 @@ p_unix = os.path.join(src, "build_files/cmake/platform/platform_unix.cmake")
 if os.path.exists(p_unix):
     with open(p_unix, "r") as f:
         c = f.read()
+    if "pkg_check_modules(SHADERC REQUIRED shaderc)" in c:
+        rep_shaderc = "set(SHADERC_INCLUDE_DIRS \"" + os.path.join(src, "../../sysroot-android-arm64/usr/include") + "\")\n    set(SHADERC_LIBRARIES \"" + os.path.join(src, "../../sysroot-android-arm64/usr/lib/libshaderc.a") + "\")\n    set(SHADERC_FOUND TRUE)"
+        c = c.replace("pkg_check_modules(SHADERC REQUIRED shaderc)", rep_shaderc)
     if "find_package_wrapper(OpenEXR REQUIRED)" in c and "WITH_OPENEXR" not in c:
         c = c.replace("find_package_wrapper(OpenEXR REQUIRED)", "if(WITH_OPENEXR OR WITH_IMAGE_OPENEXR)\n  find_package_wrapper(OpenEXR REQUIRED)\nendif()")
     elif "if(WITH_OPENEXR)\n  find_package_wrapper(OpenEXR REQUIRED)" in c:
@@ -317,6 +343,11 @@ else()
   add_library(bf_deps_opencolorio INTERFACE)
   add_library(bf::dependencies::opencolorio ALIAS bf_deps_opencolorio)
 endif()""")
+    sysroot = os.path.abspath(os.path.join(src, "../../sysroot-android-arm64"))
+    shaderc_a = os.path.join(sysroot, "usr/lib/libshaderc.a")
+    sysroot_lib = os.path.join(sysroot, "usr/lib")
+    rep_target = "target_link_directories(bf_deps_optional_shaderc INTERFACE \"" + sysroot_lib + "\")\n  target_link_libraries(bf_deps_optional_shaderc INTERFACE \"" + shaderc_a + "\")"
+    c = c.replace("target_link_libraries(bf_deps_optional_shaderc INTERFACE ${SHADERC_LIBRARIES})", rep_target)
     with open(p_dep, "w") as f:
         f.write(c)
 
@@ -533,13 +564,18 @@ cmake -B build-blender -S blender -G Ninja \
     -DCROSSCOMPILE_TOOLDIR="${HOST_TOOLS_DIR}/bin" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DWITH_INSTALL_PORTABLE=OFF \
-    -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined-version" \
-    -DCMAKE_EXE_LINKER_FLAGS="-pie -Wl,--undefined-version" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-L${SYSROOT_DIR}/usr/lib -Wl,--undefined-version" \
+    -DCMAKE_EXE_LINKER_FLAGS="-pie -L${SYSROOT_DIR}/usr/lib -Wl,--undefined-version" \
     -DWITH_VULKAN_BACKEND=ON \
     -DVulkan_INCLUDE_DIRS="${SYSROOT_DIR}/usr/include;${TOOLCHAIN}/sysroot/usr/include" \
     -DVulkan_LIBRARIES="${TOOLCHAIN}/sysroot/usr/lib/aarch64-linux-android/${API_LEVEL}/libvulkan.so" \
+    -DSHADERC_ROOT_DIR="${SYSROOT_DIR}/usr" \
+    -DSHADERC_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
+    -DSHADERC_INCLUDE_DIRS="${SYSROOT_DIR}/usr/include" \
+    -DSHADERC_LIBRARY="${SYSROOT_DIR}/usr/lib/libshaderc.a" \
+    -DSHADERC_LIBRARIES="${SYSROOT_DIR}/usr/lib/libshaderc.a" \
     -DShaderc_INCLUDE_DIRS="${SYSROOT_DIR}/usr/include" \
-    -DShaderc_LIBRARIES="${SYSROOT_DIR}/usr/lib/libshaderc.so" \
+    -DShaderc_LIBRARIES="${SYSROOT_DIR}/usr/lib/libshaderc.a" \
     -DHAVE_BROTLI=TRUE \
     -DHAVE_BROTLI_INC="${SYSROOT_DIR}/usr/include/freetype2" \
     -DWITH_GHOST_SDL=ON \
@@ -618,9 +654,6 @@ cmake -B build-blender -S blender -G Ninja \
     -DWITH_FFTW3=OFF \
     -DWITH_MOD_OCEANSIM=OFF \
     -DWITH_MOD_FLUID=OFF \
-    -DSHADERC_ROOT_DIR="${SYSROOT_DIR}/usr" \
-    -DSHADERC_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
-    -DSHADERC_LIBRARY="${SYSROOT_DIR}/usr/lib/libshaderc.a" \
     -DWITH_BUILDINFO=OFF
 
 echo "===> Building Blender core..."
