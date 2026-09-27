@@ -511,6 +511,16 @@ if [ -n "${PNG_LIB}" ]; then
     cp -P "${PNG_LIB}" "${SYSROOT_DIR}/usr/lib/libpng16.so" 2>/dev/null || true
 fi
 
+PYTHON_INC=$(find "${SYSROOT_DIR}/usr/include" -maxdepth 1 -name "python3*" 2>/dev/null | head -n 1 || true)
+if [ -z "${PYTHON_INC}" ]; then
+    PYTHON_INC="${SYSROOT_DIR}/usr/include/python3.13"
+fi
+PYTHON_LIB=$(find "${SYSROOT_DIR}/usr/lib" -maxdepth 1 -name "libpython3*.so" 2>/dev/null | head -n 1 || true)
+if [ -z "${PYTHON_LIB}" ]; then
+    PYTHON_LIB="${SYSROOT_DIR}/usr/lib/libpython3.13.so"
+fi
+echo "Using Python include: ${PYTHON_INC}, library: ${PYTHON_LIB}"
+
 echo "===> Configuring Blender for Android ARM64..."
 cmake -B build-blender -S blender -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
@@ -545,8 +555,11 @@ cmake -B build-blender -S blender -G Ninja \
     -DWITH_X11_ALPHA=OFF \
     -DWITH_OPENGL_BACKEND=OFF \
     -DWITH_PYTHON=ON \
-    -DPYTHON_INCLUDE_DIR="${SYSROOT_DIR}/usr/include/python3.12" \
-    -DPYTHON_LIBRARY="${SYSROOT_DIR}/usr/lib/libpython3.12.so" \
+    -DPYTHON_VERSION="3.13" \
+    -DPYTHON_INCLUDE_DIR="${PYTHON_INC}" \
+    -DPYTHON_INCLUDE_DIRS="${PYTHON_INC}" \
+    -DPYTHON_LIBRARY="${PYTHON_LIB}" \
+    -DPYTHON_LIBRARIES="${PYTHON_LIB}" \
     -DTBB_DIR="${TBB_DIR}" \
     -DTBB_INCLUDE_DIR="${SYSROOT_DIR}/usr/include" \
     -DTBB_LIBRARY="${SYSROOT_DIR}/usr/lib/libtbb.so" \
@@ -642,9 +655,10 @@ fi
 # Copy assets
 cp -r ${BLENDER_SRC}/release/datafiles/* "${APK_DIR}/assets/datafiles/" || true
 cp -r ${BLENDER_SRC}/release/scripts/* "${APK_DIR}/assets/scripts/" || true
-if [ -d "${SYSROOT_DIR}/usr/lib/python3.12" ]; then
+PYTHON_STDLIB=$(find "${SYSROOT_DIR}/usr/lib" -maxdepth 1 -name "python3*" -type d 2>/dev/null | head -n 1 || true)
+if [ -n "${PYTHON_STDLIB}" ]; then
     mkdir -p "${APK_DIR}/assets/python/lib"
-    cp -r "${SYSROOT_DIR}/usr/lib/python3.12" "${APK_DIR}/assets/python/lib/" 2>/dev/null || true
+    cp -r "${PYTHON_STDLIB}" "${APK_DIR}/assets/python/lib/" 2>/dev/null || true
 fi
 
 # Assemble APK using android SDK build tools

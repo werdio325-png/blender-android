@@ -399,10 +399,11 @@ cmake -B build-sdl -S SDL -G Ninja \
     -DSDL_SHARED=ON
 ninja -C build-sdl install
 
-echo "===> Building CPython 3.12 for Android NDK..."
+echo "===> Building CPython 3.13 for Android NDK..."
 cd "${BUILD_TMP}"
-if [ ! -d "cpython" ]; then
-    git clone --depth 1 -b 3.12 https://github.com/python/cpython.git
+if [ ! -d "cpython" ] || [ ! -f "cpython/.git" ]; then
+    rm -rf cpython
+    git clone --depth 1 -b 3.13 https://github.com/python/cpython.git
 fi
 cd cpython
 echo "*disabled*" > Modules/Setup.local
@@ -412,16 +413,18 @@ echo "_tkinter" >> Modules/Setup.local
 rm -rf build-android
 mkdir -p build-android
 cd build-android
+BUILD_PYTHON="$(command -v python3.13 || command -v python3)"
 ../configure \
     --host=${TARGET_TRIPLE} \
     --build=$(../config.guess) \
-    --with-build-python=python3 \
+    --with-build-python="${BUILD_PYTHON}" \
     --prefix="${SYSROOT_DIR}/usr" \
     --enable-shared \
-    --without-ensurepip \
+    --without-static-libpython \
+    --with-ensurepip=no \
     --disable-test-modules \
     --disable-ipv6 \
-    CFLAGS="${CFLAGS}" \
+    CFLAGS="${CFLAGS} -D__BIONIC_NO_PAGE_SIZE_MACRO" \
     LDFLAGS="${LDFLAGS}" \
     py_cv_module__ctypes=n/a \
     ac_cv_buggy_getaddrinfo=no \

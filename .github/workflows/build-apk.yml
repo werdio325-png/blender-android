@@ -30,6 +30,11 @@ jobs:
             sudo chmod -R 755 /system
           fi
 
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
       - name: Restore Android Dependencies Sysroot
         id: cache-deps
         uses: actions/cache/restore@v4
