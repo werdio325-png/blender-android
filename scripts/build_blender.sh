@@ -519,7 +519,8 @@ PYTHON_LIB=$(find "${SYSROOT_DIR}/usr/lib" -maxdepth 1 -name "libpython3*.so" 2>
 if [ -z "${PYTHON_LIB}" ]; then
     PYTHON_LIB="${SYSROOT_DIR}/usr/lib/libpython3.13.so"
 fi
-echo "Using Python include: ${PYTHON_INC}, library: ${PYTHON_LIB}"
+HOST_PYTHON=$(command -v python3.13 || command -v python3)
+echo "Using Python include: ${PYTHON_INC}, library: ${PYTHON_LIB}, host executable: ${HOST_PYTHON}"
 
 echo "===> Configuring Blender for Android ARM64..."
 cmake -B build-blender -S blender -G Ninja \
@@ -556,6 +557,7 @@ cmake -B build-blender -S blender -G Ninja \
     -DWITH_OPENGL_BACKEND=OFF \
     -DWITH_PYTHON=ON \
     -DPYTHON_VERSION="3.13" \
+    -DPYTHON_EXECUTABLE="${HOST_PYTHON}" \
     -DPYTHON_INCLUDE_DIR="${PYTHON_INC}" \
     -DPYTHON_INCLUDE_DIRS="${PYTHON_INC}" \
     -DPYTHON_LIBRARY="${PYTHON_LIB}" \
