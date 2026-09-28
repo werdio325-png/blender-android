@@ -779,6 +779,11 @@ cmake -B build-blender -S blender -G Ninja \
 echo "===> Building Blender core..."
 ninja -C build-blender -j$(nproc)
 
+echo "===> Freeing build disk space before packaging..."
+rm -rf "${BLENDER_SRC}/.git" "${BUILD_TMP}/build-host-tools" "${BUILD_TMP}/vulkan-headers"
+find "${BUILD_TMP}/build-blender" -name "*.o" -delete 2>/dev/null || true
+find "${BUILD_TMP}/build-blender" -name "*.a" -delete 2>/dev/null || true
+
 echo "===> Packaging into standalone APK..."
 APK_DIR="${BUILD_TMP}/apk-build"
 rm -rf "${APK_DIR}"
@@ -807,14 +812,30 @@ else
     fi
 fi
 
+# Remove versioned .so.* files and keep only unversioned .so for Android package manager
+find "${APK_DIR}/lib/arm64-v8a" -name "*.[0-9]*" -delete 2>/dev/null || true
+# Strip unneeded symbols from all shared libraries in the APK
+echo "===> Stripping shared libraries for APK size reduction..."
+find "${APK_DIR}/lib/arm64-v8a" -type f -name "*.so" -exec "${TOOLCHAIN}/bin/llvm-strip" --strip-unneeded {} + 2>/dev/null || true
+
 # Copy assets
-cp -r ${BLENDER_SRC}/release/datafiles/* "${APK_DIR}/assets/datafiles/" || true
-cp -r ${BLENDER_SRC}/release/scripts/* "${APK_DIR}/assets/scripts/" || true
+if [ -d "${BLENDER_SRC}/release/datafiles" ]; then
+    cp -r ${BLENDER_SRC}/release/datafiles/* "${APK_DIR}/assets/datafiles/" || true
+fi
+if [ -d "${BLENDER_SRC}/release/scripts" ]; then
+    cp -r ${BLENDER_SRC}/release/scripts/* "${APK_DIR}/assets/scripts/" || true
+elif [ -d "${BLENDER_SRC}/scripts" ]; then
+    cp -r ${BLENDER_SRC}/scripts/* "${APK_DIR}/assets/scripts/" || true
+fi
+
 PYTHON_STDLIB=$(find "${SYSROOT_DIR}/usr/lib" -maxdepth 1 -name "python3*" -type d 2>/dev/null | head -n 1 || true)
 if [ -n "${PYTHON_STDLIB}" ]; then
     mkdir -p "${APK_DIR}/assets/python/lib"
     cp -r "${PYTHON_STDLIB}" "${APK_DIR}/assets/python/lib/" 2>/dev/null || true
 fi
+
+find "${APK_DIR}/assets" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+find "${APK_DIR}/assets" -name "*.pyc" -delete 2>/dev/null || true
 
 # Assemble APK using android SDK build tools
 AAPT2=$(find /usr/local/lib/android/sdk/build-tools -name aapt2 2>/dev/null | sort -V | tail -n 1)

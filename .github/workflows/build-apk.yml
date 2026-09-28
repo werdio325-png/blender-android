@@ -21,6 +21,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Free Runner Disk Space
+        run: |
+          echo "=== Disk space before cleanup ==="
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android/sdk/ndk/2[0-5]*
+          sudo rm -rf /usr/local/lib/android/sdk/ndk/26*
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo docker system prune -af || true
+          echo "=== Disk space after cleanup ==="
+          df -h
+
       - name: Set up Build Tools
         run: |
           sudo apt-get update
