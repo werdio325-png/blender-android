@@ -242,20 +242,113 @@ if [ -f "${BLENDER_SRC}/source/creator/creator.cc" ]; then
 
 #ifdef __ANDROID__
 #include <android/native_activity.h>
+#include <android/native_window.h>
+#include <android/log.h>
 #include <pthread.h>
 #include <dlfcn.h>
 #include <vulkan/vulkan.h>
+#include <unistd.h>
+
+#define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, "BlenderNative", __VA_ARGS__)
+#define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, "BlenderNative", __VA_ARGS__)
+
+static ANativeActivity *g_native_activity = nullptr;
+static ANativeWindow *g_native_window = nullptr;
+static pthread_mutex_t g_window_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t g_window_cond = PTHREAD_COND_INITIALIZER;
+static bool g_window_ready = false;
+static bool g_thread_started = false;
 
 static void *android_blender_thread_func(void *arg) {
+    ALOGI("Blender thread waiting for ANativeWindow...");
+    pthread_mutex_lock(&g_window_mutex);
+    while (!g_window_ready) {
+        pthread_cond_wait(&g_window_cond, &g_window_mutex);
+    }
+    pthread_mutex_unlock(&g_window_mutex);
+
+    ALOGI("ANativeWindow ready (%p), launching blender_main...", g_native_window);
     const char *argv[] = {"blender", nullptr};
     blender_main(1, argv);
+    ALOGI("blender_main exited.");
     return nullptr;
 }
 
+static void onNativeWindowCreated(ANativeActivity* activity, ANativeWindow* window) {
+    ALOGI("onNativeWindowCreated: window=%p", window);
+    pthread_mutex_lock(&g_window_mutex);
+    g_native_window = window;
+    ANativeWindow_acquire(window);
+    g_window_ready = true;
+    pthread_cond_broadcast(&g_window_cond);
+    pthread_mutex_unlock(&g_window_mutex);
+}
+
+static void onNativeWindowDestroyed(ANativeActivity* activity, ANativeWindow* window) {
+    ALOGI("onNativeWindowDestroyed: window=%p", window);
+    pthread_mutex_lock(&g_window_mutex);
+    g_window_ready = false;
+    if (g_native_window) {
+        ANativeWindow_release(g_native_window);
+        g_native_window = nullptr;
+    }
+    pthread_mutex_unlock(&g_window_mutex);
+}
+
+static void onNativeWindowResized(ANativeActivity* activity, ANativeWindow* window) {
+    ALOGI("onNativeWindowResized: window=%p, w=%d, h=%d", window,
+          ANativeWindow_getWidth(window), ANativeWindow_getHeight(window));
+}
+
+static void onNativeWindowRedrawNeeded(ANativeActivity* activity, ANativeWindow* window) {
+    ALOGI("onNativeWindowRedrawNeeded: window=%p", window);
+}
+
+static void onDestroy(ANativeActivity* activity) {
+    ALOGI("onDestroy");
+}
+
+static void onStart(ANativeActivity* activity) {
+    ALOGI("onStart");
+}
+
+static void onResume(ANativeActivity* activity) {
+    ALOGI("onResume");
+}
+
+static void onPause(ANativeActivity* activity) {
+    ALOGI("onPause");
+}
+
+static void onStop(ANativeActivity* activity) {
+    ALOGI("onStop");
+}
+
+static void onWindowFocusChanged(ANativeActivity* activity, int hasFocus) {
+    ALOGI("onWindowFocusChanged: hasFocus=%d", hasFocus);
+}
+
 extern "C" JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize) {
-    pthread_t thread;
-    pthread_create(&thread, nullptr, android_blender_thread_func, nullptr);
-    pthread_detach(thread);
+    ALOGI("ANativeActivity_onCreate started");
+    g_native_activity = activity;
+
+    activity->callbacks->onDestroy = onDestroy;
+    activity->callbacks->onStart = onStart;
+    activity->callbacks->onResume = onResume;
+    activity->callbacks->onPause = onPause;
+    activity->callbacks->onStop = onStop;
+    activity->callbacks->onWindowFocusChanged = onWindowFocusChanged;
+    activity->callbacks->onNativeWindowCreated = onNativeWindowCreated;
+    activity->callbacks->onNativeWindowDestroyed = onNativeWindowDestroyed;
+    activity->callbacks->onNativeWindowResized = onNativeWindowResized;
+    activity->callbacks->onNativeWindowRedrawNeeded = onNativeWindowRedrawNeeded;
+
+    if (!g_thread_started) {
+        g_thread_started = true;
+        pthread_t thread;
+        pthread_create(&thread, nullptr, android_blender_thread_func, nullptr);
+        pthread_detach(thread);
+    }
 }
 
 extern "C" {
