@@ -259,7 +259,29 @@ static pthread_cond_t g_window_cond = PTHREAD_COND_INITIALIZER;
 static bool g_window_ready = false;
 static bool g_thread_started = false;
 
+static void *android_log_pipe_thread(void *arg) {
+    int pfd = (int)(intptr_t)arg;
+    char buf[1024];
+    ssize_t n;
+    while ((n = read(pfd, buf, sizeof(buf) - 1)) > 0) {
+        buf[n] = '\0';
+        __android_log_print(ANDROID_LOG_INFO, "BlenderCore", "%s", buf);
+    }
+    return nullptr;
+}
+
 static void *android_blender_thread_func(void *arg) {
+    int pfd[2];
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    setvbuf(stderr, nullptr, _IONBF, 0);
+    if (pipe(pfd) == 0) {
+        dup2(pfd[1], STDOUT_FILENO);
+        dup2(pfd[1], STDERR_FILENO);
+        pthread_t log_t;
+        pthread_create(&log_t, nullptr, android_log_pipe_thread, (void*)(intptr_t)pfd[0]);
+        pthread_detach(log_t);
+    }
+
     ALOGI("Blender thread waiting for ANativeWindow...");
     pthread_mutex_lock(&g_window_mutex);
     while (!g_window_ready) {
@@ -268,8 +290,16 @@ static void *android_blender_thread_func(void *arg) {
     pthread_mutex_unlock(&g_window_mutex);
 
     ALOGI("ANativeWindow ready (%p), launching blender_main...", g_native_window);
-    const char *argv[] = {"blender", nullptr};
-    blender_main(1, argv);
+    if (g_native_activity && g_native_activity->internalDataPath) {
+        setenv("HOME", g_native_activity->internalDataPath, 1);
+        setenv("TMPDIR", g_native_activity->internalDataPath, 1);
+        chdir(g_native_activity->internalDataPath);
+    }
+
+    const char *argv[] = {"blender", "--background", nullptr};
+    // If you need full UI, use regular arguments
+    const char *ui_argv[] = {"blender", nullptr};
+    blender_main(1, const_cast<char**>(ui_argv));
     ALOGI("blender_main exited.");
     return nullptr;
 }
