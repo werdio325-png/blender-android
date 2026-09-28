@@ -767,7 +767,18 @@ HOST_PYTHON=$(command -v python3.13 || command -v python3)
 echo "Using Python include: ${PYTHON_INC}, library: ${PYTHON_LIB}, host executable: ${HOST_PYTHON}"
 
 echo "===> Configuring Blender for Android ARM64..."
+CCACHE_BIN=$(command -v ccache || true)
+CCACHE_ARGS=()
+if [ -n "${CCACHE_BIN}" ]; then
+    echo "Using ccache: ${CCACHE_BIN}"
+    CCACHE_ARGS=(
+        -DCMAKE_C_COMPILER_LAUNCHER="${CCACHE_BIN}"
+        -DCMAKE_CXX_COMPILER_LAUNCHER="${CCACHE_BIN}"
+    )
+fi
+
 cmake -B build-blender -S blender -G Ninja \
+    "${CCACHE_ARGS[@]}" \
     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
     -DANDROID_ABI=arm64-v8a \
     -DANDROID_PLATFORM=android-${API_LEVEL} \

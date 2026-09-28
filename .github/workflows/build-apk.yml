@@ -40,7 +40,7 @@ jobs:
       - name: Set up Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build git wget tar zip unzip openjdk-17-jdk meson pkg-config libeigen3-dev build-essential libtbb-dev gcc-14 g++-14 clang-18 libjpeg-dev libpng-dev zlib1g-dev libzstd-dev libepoxy-dev libfmt-dev libfreetype6-dev libwebp-dev libtiff-dev libxml2-dev libopenimageio-dev libopenexr-dev libimath-dev libshaderc-dev qemu-user-static binfmt-support
+          sudo apt-get install -y cmake ninja-build ccache git wget tar zip unzip openjdk-17-jdk meson pkg-config libeigen3-dev build-essential libtbb-dev gcc-14 g++-14 clang-18 libjpeg-dev libpng-dev zlib1g-dev libzstd-dev libepoxy-dev libfmt-dev libfreetype6-dev libwebp-dev libtiff-dev libxml2-dev libopenimageio-dev libopenexr-dev libimath-dev libshaderc-dev qemu-user-static binfmt-support
           if [ -f bionic-arm64.tar.gz ]; then
             sudo tar -xzf bionic-arm64.tar.gz -C /
             sudo chmod -R 755 /system
@@ -50,6 +50,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+
+      - name: Setup CCache for Fast Incremental Builds
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-blender-ccache-${{ github.ref }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-blender-ccache-${{ github.ref }}-
+            ${{ runner.os }}-blender-ccache-
 
       - name: Restore Android Dependencies Sysroot
         id: cache-deps
@@ -73,8 +82,12 @@ jobs:
 
       - name: Build Blender 5.2 and Assemble APK
         run: |
+          export CCACHE_DIR=~/.cache/ccache
+          export CCACHE_MAXSIZE="3G"
+          ccache -z
           chmod +x scripts/build_blender.sh
           ./scripts/build_blender.sh
+          ccache -s
 
       - name: Upload Blender APK
         uses: actions/upload-artifact@v4
