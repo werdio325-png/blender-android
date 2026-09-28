@@ -442,6 +442,11 @@ BUILD_PYTHON="$(command -v python3.13 || command -v python3)"
 make -j$(nproc)
 make install
 
+# Ensure libpython3.13.so is a real file not a dangling link
+if [ -f "${SYSROOT_DIR}/usr/lib/libpython3.13.so" ] && [ -L "${SYSROOT_DIR}/usr/lib/libpython3.13.so" ]; then
+    cp --remove-destination "$(readlink -f "${SYSROOT_DIR}/usr/lib/libpython3.13.so")" "${SYSROOT_DIR}/usr/lib/libpython3.13.so"
+fi
+
 echo "===> Packaging Sysroot..."
 cd "${BASE_DIR}"
 tar -czf blender-deps-android-arm64.tar.gz -C "${SYSROOT_DIR}" .

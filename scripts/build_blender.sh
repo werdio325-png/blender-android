@@ -812,8 +812,12 @@ else
     fi
 fi
 
-# Remove versioned .so.* files and keep only unversioned .so for Android package manager
-find "${APK_DIR}/lib/arm64-v8a" -name "*.[0-9]*" -delete 2>/dev/null || true
+# Ensure libpython3.13.so is present and not deleted
+if [ -f "${SYSROOT_DIR}/usr/lib/libpython3.13.so" ]; then
+    cp -P "${SYSROOT_DIR}/usr/lib/libpython3.13.so"* "${APK_DIR}/lib/arm64-v8a/" || true
+fi
+# Remove versioned .so.* files but protect libpython3.13.so
+find "${APK_DIR}/lib/arm64-v8a" -name "*.[0-9]*" ! -name "libpython3.13.so" -delete 2>/dev/null || true
 # Strip unneeded symbols from all shared libraries in the APK
 echo "===> Stripping shared libraries for APK size reduction..."
 find "${APK_DIR}/lib/arm64-v8a" -type f -name "*.so" -exec "${TOOLCHAIN}/bin/llvm-strip" --strip-unneeded {} + 2>/dev/null || true
