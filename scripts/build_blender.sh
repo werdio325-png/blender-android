@@ -249,6 +249,8 @@ if [ -f "${BLENDER_SRC}/source/creator/creator.cc" ]; then
 #include <vulkan/vulkan.h>
 #include <unistd.h>
 
+extern "C" void SDL_SetMainReady(void);
+
 #define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, "BlenderNative", __VA_ARGS__)
 #define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, "BlenderNative", __VA_ARGS__)
 
@@ -299,6 +301,8 @@ static void *android_blender_thread_func(void *arg) {
     const char *argv[] = {"blender", "--background", nullptr};
     // If you need full UI, use regular arguments
     const char *ui_argv[] = {"blender", nullptr};
+    ALOGI("Calling SDL_SetMainReady()...");
+    SDL_SetMainReady();
     blender_main(1, ui_argv);
     ALOGI("blender_main exited.");
     return nullptr;
