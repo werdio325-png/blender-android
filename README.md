@@ -6,9 +6,12 @@
 [![Arch](https://img.shields.io/badge/Architecture-ARM64--v8a-blue.svg)](https://developer.arm.com)
 [![Graphics](https://img.shields.io/badge/Graphics-Vulkan%20Native-red.svg)](https://www.vulkan.org)
 
-> [!WARNING]
-> **EXPERIMENTAL PROJECT / RESEARCH PROTOTYPE**  
-> This is an active work-in-progress research project bringing **Blender 5.x** natively to Android ARM64 devices without emulation or Linux chroots. Stability, performance, and touch/stylus UX are actively being developed.
+> [!CAUTION]
+> **ЭКСПЕРИМЕНТАЛЬНЫЙ ИССЛЕДОВАТЕЛЬСКИЙ ПРОЕКТ (R&D) — РАБОЧЕЙ ВЕРСИИ ПОКА НЕТ**
+>
+> Проект находится на стадии ранних исследований и экспериментов. **Рабочей или стабильной сборки на данный момент нет.** Сборки предназначены исключительно для разработчиков, тестирования на реальных устройствах и отладки архитектуры.
+>
+> *This is an early R&D research project. There is currently **no functional or ready-to-use version**. Builds are provided strictly for developer testing, debugging, and experimentation.*
 
 ---
 
