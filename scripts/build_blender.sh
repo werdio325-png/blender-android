@@ -299,7 +299,7 @@ static void *android_blender_thread_func(void *arg) {
     const char *argv[] = {"blender", "--background", nullptr};
     // If you need full UI, use regular arguments
     const char *ui_argv[] = {"blender", nullptr};
-    blender_main(1, const_cast<char**>(ui_argv));
+    blender_main(1, ui_argv);
     ALOGI("blender_main exited.");
     return nullptr;
 }
