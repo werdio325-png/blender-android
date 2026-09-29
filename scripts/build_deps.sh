@@ -396,6 +396,79 @@ cd "${BUILD_TMP}"
 if [ ! -d "SDL" ]; then
     git clone --depth 1 https://github.com/libsdl-org/SDL.git
 fi
+
+echo "===> Patching SDL3 for Android NativeActivity..."
+python3 << 'SDL_PYEOF'
+import os
+
+p_c = "SDL/src/core/android/SDL_android.c"
+if os.path.exists(p_c):
+    with open(p_c, "r") as f:
+        c = f.read()
+
+    # 1. Provide an exportable native window setter so NativeActivity can pass ANativeWindow directly
+    if "ANativeWindow *g_sdl_native_window" not in c:
+        c = "ANativeWindow *g_sdl_native_window = NULL;\n" + c
+        c = c.replace("ANativeWindow *Android_JNI_GetNativeWindow(void)\n{",
+                      "ANativeWindow *Android_JNI_GetNativeWindow(void)\n{\n    if (g_sdl_native_window) return g_sdl_native_window;\n    if (!mActivityClass) return NULL;")
+
+    # 2. Guard all Android_JNI_* functions that dereference env / mActivityClass
+    # In Android_JNI_GetEnv, if no JavaVM, return NULL safely
+    c = c.replace("JNIEnv *env = Android_JNI_GetEnv();", "JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;")
+
+    # Fix functions with non-void return values
+    c = c.replace("bool Android_JNI_SetClipboardText(const char *text)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_SetClipboardText(const char *text)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("char *Android_JNI_GetClipboardText(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "char *Android_JNI_GetClipboardText(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return SDL_strdup(\"\");")
+
+    c = c.replace("bool Android_JNI_HasClipboardText(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_HasClipboardText(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("int Android_JNI_CreateCustomCursor(SDL_Surface *surface, int hot_x, int hot_y)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "int Android_JNI_CreateCustomCursor(SDL_Surface *surface, int hot_x, int hot_y)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return 0;")
+
+    c = c.replace("bool Android_JNI_SetCustomCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_SetCustomCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("bool Android_JNI_SetSystemCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_SetSystemCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("bool Android_JNI_SupportsRelativeMouse(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_SupportsRelativeMouse(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("bool Android_JNI_SetRelativeMouseEnabled(bool enabled)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_SetRelativeMouseEnabled(bool enabled)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("bool Android_JNI_ShouldMinimizeOnFocusLoss(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_ShouldMinimizeOnFocusLoss(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("bool Android_JNI_SendMessage(int command, int param)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_SendMessage(int command, int param)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("bool Android_JNI_ShowToast(const char *message, int duration, int gravity, int xOffset, int yOffset)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_ShowToast(const char *message, int duration, int gravity, int xOffset, int yOffset)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("bool Android_JNI_OpenURL(const char *url)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_OpenURL(const char *url)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    with open(p_c, "w") as f:
+        f.write(c)
+
+p_w = "SDL/src/video/android/SDL_androidwindow.c"
+if os.path.exists(p_w):
+    with open(p_w, "r") as f:
+        w = f.read()
+    # In Android_CreateWindow, ensure native_window can be fetched from g_sdl_native_window
+    w = w.replace("extern ANativeWindow *g_sdl_native_window;", "")
+    w = "extern ANativeWindow *g_sdl_native_window;\n" + w
+    w = w.replace("data->native_window = Android_JNI_GetNativeWindow();",
+                  "data->native_window = g_sdl_native_window ? g_sdl_native_window : Android_JNI_GetNativeWindow();")
+    with open(p_w, "w") as f:
+        f.write(w)
+SDL_PYEOF
+
 cmake -B build-sdl -S SDL -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
     -DANDROID_ABI=arm64-v8a \

@@ -120,6 +120,89 @@ for d in "${TOOLCHAIN}/sysroot/usr/lib" \
     cp -f "${SYSROOT_DIR}/usr/lib/libHLSL"* "$d/" 2>/dev/null || true
 done
 
+echo "===> Ensuring SDL3 is patched and up to date for ANativeActivity..."
+mkdir -p "${BUILD_TMP}"
+cd "${BUILD_TMP}"
+if [ ! -d "SDL" ]; then
+    git clone --depth 1 https://github.com/libsdl-org/SDL.git
+fi
+python3 << 'SDL_PYEOF'
+import os
+
+p_c = "SDL/src/core/android/SDL_android.c"
+if os.path.exists(p_c):
+    with open(p_c, "r") as f:
+        c = f.read()
+
+    if "ANativeWindow *g_sdl_native_window" not in c:
+        c = "ANativeWindow *g_sdl_native_window = NULL;\n" + c
+        c = c.replace("ANativeWindow *Android_JNI_GetNativeWindow(void)\n{",
+                      "ANativeWindow *Android_JNI_GetNativeWindow(void)\n{\n    if (g_sdl_native_window) return g_sdl_native_window;\n    if (!mActivityClass) return NULL;")
+
+    c = c.replace("JNIEnv *env = Android_JNI_GetEnv();", "JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;")
+
+    c = c.replace("bool Android_JNI_SetClipboardText(const char *text)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_SetClipboardText(const char *text)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("char *Android_JNI_GetClipboardText(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "char *Android_JNI_GetClipboardText(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return SDL_strdup(\"\");")
+
+    c = c.replace("bool Android_JNI_HasClipboardText(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_HasClipboardText(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("int Android_JNI_CreateCustomCursor(SDL_Surface *surface, int hot_x, int hot_y)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "int Android_JNI_CreateCustomCursor(SDL_Surface *surface, int hot_x, int hot_y)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return 0;")
+
+    c = c.replace("bool Android_JNI_SetCustomCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_SetCustomCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("bool Android_JNI_SetSystemCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_SetSystemCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("bool Android_JNI_SupportsRelativeMouse(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_SupportsRelativeMouse(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("bool Android_JNI_SetRelativeMouseEnabled(bool enabled)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_SetRelativeMouseEnabled(bool enabled)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("bool Android_JNI_ShouldMinimizeOnFocusLoss(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_ShouldMinimizeOnFocusLoss(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("bool Android_JNI_SendMessage(int command, int param)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_SendMessage(int command, int param)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("bool Android_JNI_ShowToast(const char *message, int duration, int gravity, int xOffset, int yOffset)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_ShowToast(const char *message, int duration, int gravity, int xOffset, int yOffset)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    c = c.replace("bool Android_JNI_OpenURL(const char *url)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+                  "bool Android_JNI_OpenURL(const char *url)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+
+    with open(p_c, "w") as f:
+        f.write(c)
+
+p_w = "SDL/src/video/android/SDL_androidwindow.c"
+if os.path.exists(p_w):
+    with open(p_w, "r") as f:
+        w = f.read()
+    w = w.replace("extern ANativeWindow *g_sdl_native_window;", "")
+    w = "extern ANativeWindow *g_sdl_native_window;\n" + w
+    w = w.replace("data->native_window = Android_JNI_GetNativeWindow();",
+                  "data->native_window = g_sdl_native_window ? g_sdl_native_window : Android_JNI_GetNativeWindow();")
+    with open(p_w, "w") as f:
+        f.write(w)
+SDL_PYEOF
+
+cmake -B build-sdl -S SDL -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
+    -DANDROID_ABI=arm64-v8a \
+    -DANDROID_PLATFORM=android-${API_LEVEL} \
+    -DCMAKE_INSTALL_PREFIX="${SYSROOT_DIR}/usr" \
+    -DSDL_VULKAN=ON \
+    -DSDL_STATIC=OFF \
+    -DSDL_SHARED=ON
+ninja -C build-sdl install
+cd "${BASE_DIR}"
+
 export PKG_CONFIG_PATH="${SYSROOT_DIR}/usr/lib/pkgconfig:${SYSROOT_DIR}/usr/share/pkgconfig:${PKG_CONFIG_PATH:-}"
 
 echo "===> Disabling Git LFS filters..."
@@ -251,6 +334,8 @@ if [ -f "${BLENDER_SRC}/source/creator/creator.cc" ]; then
 
 #include <SDL3/SDL.h>
 extern "C" void SDL_SetMainReady(void);
+extern "C" ANativeWindow *g_sdl_native_window;
+extern "C" void Android_SetScreenResolution(int, int, int, int, float, float);
 
 #define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, "BlenderNative", __VA_ARGS__)
 #define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, "BlenderNative", __VA_ARGS__)
@@ -317,6 +402,12 @@ static void onNativeWindowCreated(ANativeActivity* activity, ANativeWindow* wind
     pthread_mutex_lock(&g_window_mutex);
     g_native_window = window;
     ANativeWindow_acquire(window);
+    g_sdl_native_window = window;
+    int w = ANativeWindow_getWidth(window);
+    int h = ANativeWindow_getHeight(window);
+    if (w <= 0) w = 1920;
+    if (h <= 0) h = 1080;
+    Android_SetScreenResolution(w, h, w, h, 1.0f, 60.0f);
     g_window_ready = true;
     pthread_cond_broadcast(&g_window_cond);
     pthread_mutex_unlock(&g_window_mutex);
@@ -326,6 +417,9 @@ static void onNativeWindowDestroyed(ANativeActivity* activity, ANativeWindow* wi
     ALOGI("onNativeWindowDestroyed: window=%p", window);
     pthread_mutex_lock(&g_window_mutex);
     g_window_ready = false;
+    if (g_sdl_native_window == window) {
+        g_sdl_native_window = nullptr;
+    }
     if (g_native_window) {
         ANativeWindow_release(g_native_window);
         g_native_window = nullptr;
@@ -334,8 +428,12 @@ static void onNativeWindowDestroyed(ANativeActivity* activity, ANativeWindow* wi
 }
 
 static void onNativeWindowResized(ANativeActivity* activity, ANativeWindow* window) {
-    ALOGI("onNativeWindowResized: window=%p, w=%d, h=%d", window,
-          ANativeWindow_getWidth(window), ANativeWindow_getHeight(window));
+    int w = ANativeWindow_getWidth(window);
+    int h = ANativeWindow_getHeight(window);
+    ALOGI("onNativeWindowResized: window=%p, w=%d, h=%d", window, w, h);
+    if (w > 0 && h > 0) {
+        Android_SetScreenResolution(w, h, w, h, 1.0f, 60.0f);
+    }
 }
 
 static void onNativeWindowRedrawNeeded(ANativeActivity* activity, ANativeWindow* window) {
