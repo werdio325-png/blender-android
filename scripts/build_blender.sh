@@ -128,6 +128,7 @@ for d in "${TOOLCHAIN}/sysroot/usr/lib" \
     cp -f "${SYSROOT_DIR}/usr/lib/libOSDependent"* "$d/" 2>/dev/null || true
     cp -f "${SYSROOT_DIR}/usr/lib/libHLSL"* "$d/" 2>/dev/null || true
 done
+
 export PKG_CONFIG_PATH="${SYSROOT_DIR}/usr/lib/pkgconfig:${SYSROOT_DIR}/usr/share/pkgconfig:${PKG_CONFIG_PATH:-}"
 
 echo "===> Disabling Git LFS filters..."
@@ -245,30 +246,20 @@ fi
 
 # Add ANativeActivity entry point and Vulkan NDK compatibility stubs to creator.cc
 if [ -f "${BLENDER_SRC}/source/creator/creator.cc" ]; then
-    sed -i 's/int main(int argc,/int blender_main(int argc,/' "${BLENDER_SRC}/source/creator/creator.cc"
+    # Rename main to blender_main_impl and provide extern "C" SDL_main for SDLActivity
+    sed -i 's/int main(int argc,/int blender_main_impl(int argc,/' "${BLENDER_SRC}/source/creator/creator.cc"
     cat << 'AEOF' >> "${BLENDER_SRC}/source/creator/creator.cc"
 
 #ifdef __ANDROID__
-#include <android/native_activity.h>
-#include <android/native_window.h>
 #include <android/log.h>
 #include <pthread.h>
 #include <dlfcn.h>
 #include <vulkan/vulkan.h>
 #include <unistd.h>
-
 #include <SDL3/SDL.h>
-extern "C" void SDL_SetMainReady(void);
 
 #define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, "BlenderNative", __VA_ARGS__)
 #define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, "BlenderNative", __VA_ARGS__)
-
-static ANativeActivity *g_native_activity = nullptr;
-static ANativeWindow *g_native_window = nullptr;
-static pthread_mutex_t g_window_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t g_window_cond = PTHREAD_COND_INITIALIZER;
-static bool g_window_ready = false;
-static bool g_thread_started = false;
 
 static void *android_log_pipe_thread(void *arg) {
     int pfd = (int)(intptr_t)arg;
@@ -281,7 +272,9 @@ static void *android_log_pipe_thread(void *arg) {
     return nullptr;
 }
 
-static void *android_blender_thread_func(void *arg) {
+extern int blender_main_impl(int argc, const char **argv);
+
+extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char *argv[]) {
     int pfd[2];
     setvbuf(stdout, nullptr, _IONBF, 0);
     setvbuf(stderr, nullptr, _IONBF, 0);
@@ -293,109 +286,15 @@ static void *android_blender_thread_func(void *arg) {
         pthread_detach(log_t);
     }
 
-    ALOGI("Blender thread waiting for ANativeWindow...");
-    pthread_mutex_lock(&g_window_mutex);
-    while (!g_window_ready) {
-        pthread_cond_wait(&g_window_cond, &g_window_mutex);
-    }
-    pthread_mutex_unlock(&g_window_mutex);
-
-    ALOGI("ANativeWindow ready (%p), launching blender_main...", g_native_window);
-    if (g_native_activity && g_native_activity->internalDataPath) {
-        setenv("HOME", g_native_activity->internalDataPath, 1);
-        setenv("TMPDIR", g_native_activity->internalDataPath, 1);
-        chdir(g_native_activity->internalDataPath);
-    }
-
-    const char *argv[] = {"blender", "--background", nullptr};
-    // If you need full UI, use regular arguments
-    const char *ui_argv[] = {"blender", nullptr};
-    ALOGI("Configuring SDL for ANativeActivity...");
-    SDL_SetMainReady();
+    ALOGI("SDL_main entry point reached from SDLActivity!");
     SDL_SetHint("SDL_APP_NAME", "Blender");
     SDL_SetHint("SDL_APP_ID", "org.blender.app");
     SDL_SetAppMetadata("Blender", "5.2.0", "org.blender.app");
-    blender_main(1, ui_argv);
-    ALOGI("blender_main exited.");
-    return nullptr;
-}
 
-static void onNativeWindowCreated(ANativeActivity* activity, ANativeWindow* window) {
-    ALOGI("onNativeWindowCreated: window=%p", window);
-    pthread_mutex_lock(&g_window_mutex);
-    g_native_window = window;
-    ANativeWindow_acquire(window);
-    g_window_ready = true;
-    pthread_cond_broadcast(&g_window_cond);
-    pthread_mutex_unlock(&g_window_mutex);
-}
-
-static void onNativeWindowDestroyed(ANativeActivity* activity, ANativeWindow* window) {
-    ALOGI("onNativeWindowDestroyed: window=%p", window);
-    pthread_mutex_lock(&g_window_mutex);
-    g_window_ready = false;
-    if (g_native_window) {
-        ANativeWindow_release(g_native_window);
-        g_native_window = nullptr;
-    }
-    pthread_mutex_unlock(&g_window_mutex);
-}
-
-static void onNativeWindowResized(ANativeActivity* activity, ANativeWindow* window) {
-    int w = ANativeWindow_getWidth(window);
-    int h = ANativeWindow_getHeight(window);
-    ALOGI("onNativeWindowResized: window=%p, w=%d, h=%d", window, w, h);
-}
-
-static void onNativeWindowRedrawNeeded(ANativeActivity* activity, ANativeWindow* window) {
-    ALOGI("onNativeWindowRedrawNeeded: window=%p", window);
-}
-
-static void onDestroy(ANativeActivity* activity) {
-    ALOGI("onDestroy");
-}
-
-static void onStart(ANativeActivity* activity) {
-    ALOGI("onStart");
-}
-
-static void onResume(ANativeActivity* activity) {
-    ALOGI("onResume");
-}
-
-static void onPause(ANativeActivity* activity) {
-    ALOGI("onPause");
-}
-
-static void onStop(ANativeActivity* activity) {
-    ALOGI("onStop");
-}
-
-static void onWindowFocusChanged(ANativeActivity* activity, int hasFocus) {
-    ALOGI("onWindowFocusChanged: hasFocus=%d", hasFocus);
-}
-
-extern "C" JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize) {
-    ALOGI("ANativeActivity_onCreate started");
-    g_native_activity = activity;
-
-    activity->callbacks->onDestroy = onDestroy;
-    activity->callbacks->onStart = onStart;
-    activity->callbacks->onResume = onResume;
-    activity->callbacks->onPause = onPause;
-    activity->callbacks->onStop = onStop;
-    activity->callbacks->onWindowFocusChanged = onWindowFocusChanged;
-    activity->callbacks->onNativeWindowCreated = onNativeWindowCreated;
-    activity->callbacks->onNativeWindowDestroyed = onNativeWindowDestroyed;
-    activity->callbacks->onNativeWindowResized = onNativeWindowResized;
-    activity->callbacks->onNativeWindowRedrawNeeded = onNativeWindowRedrawNeeded;
-
-    if (!g_thread_started) {
-        g_thread_started = true;
-        pthread_t thread;
-        pthread_create(&thread, nullptr, android_blender_thread_func, nullptr);
-        pthread_detach(thread);
-    }
+    const char *ui_argv[] = {"blender", nullptr};
+    int ret = blender_main_impl(1, ui_argv);
+    ALOGI("blender_main_impl finished with code: %d", ret);
+    return ret;
 }
 
 extern "C" {
@@ -992,12 +891,27 @@ fi
 find "${APK_DIR}/assets" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 find "${APK_DIR}/assets" -name "*.pyc" -delete 2>/dev/null || true
 
-# Assemble APK using android SDK build tools
+# Compile Java sources and assemble APK using android SDK build tools
 AAPT2=$(find /usr/local/lib/android/sdk/build-tools -name aapt2 2>/dev/null | sort -V | tail -n 1)
 ANDROID_JAR=$(find /usr/local/lib/android/sdk/platforms -name android.jar 2>/dev/null | sort -V | tail -n 1)
+D8=$(find /usr/local/lib/android/sdk/build-tools -name d8 2>/dev/null | sort -V | tail -n 1)
 ZIPALIGN=$(find /usr/local/lib/android/sdk/build-tools -name zipalign 2>/dev/null | sort -V | tail -n 1)
 APKSIGNER=$(find /usr/local/lib/android/sdk/build-tools -name apksigner 2>/dev/null | sort -V | tail -n 1)
 
+echo "===> Compiling Java sources for SDLActivity..."
+JAVA_SRC_DIR="${BASE_DIR}/android/app/src/main/java"
+JAVA_CLASSES_DIR="${BUILD_TMP}/java_classes"
+rm -rf "${JAVA_CLASSES_DIR}"
+mkdir -p "${JAVA_CLASSES_DIR}"
+
+JAVA_FILES=$(find "${JAVA_SRC_DIR}" -name "*.java")
+javac -source 17 -target 17 -cp "$ANDROID_JAR" -d "${JAVA_CLASSES_DIR}" ${JAVA_FILES}
+
+echo "===> Converting class files to Dalvik DEX via d8..."
+CLASS_FILES=$(find "${JAVA_CLASSES_DIR}" -name "*.class")
+$D8 --output "${APK_DIR}" --min-api ${API_LEVEL} --lib "$ANDROID_JAR" ${CLASS_FILES}
+
+echo "===> Linking resources with AAPT2..."
 $AAPT2 link -o "${BUILD_TMP}/unaligned.apk" \
     -I "$ANDROID_JAR" \
     --manifest "${BASE_DIR}/android/app/src/main/AndroidManifest.xml" \
@@ -1005,7 +919,7 @@ $AAPT2 link -o "${BUILD_TMP}/unaligned.apk" \
     --auto-add-overlay
 
 cd "${APK_DIR}"
-zip -u -r "${BUILD_TMP}/unaligned.apk" lib/
+zip -u -r "${BUILD_TMP}/unaligned.apk" lib/ classes.dex
 cd "${BASE_DIR}"
 
 $ZIPALIGN -f -p 4 "${BUILD_TMP}/unaligned.apk" "${BASE_DIR}/Blender-Android-arm64.apk"

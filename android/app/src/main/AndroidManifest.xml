@@ -18,20 +18,18 @@
         android:label="Blender"
         android:icon="@android:drawable/sym_def_app_icon"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
-        android:hasCode="false"
+        android:hasCode="true"
         android:largeHeap="true"
         android:debuggable="true"
         android:extractNativeLibs="true">
         
         <activity
-            android:name="android.app.NativeActivity"
+            android:name="org.libsdl.app.SDLActivity"
             android:label="Blender"
             android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize|uiMode"
             android:screenOrientation="sensorLandscape"
             android:exported="true">
-            
-            <meta-data android:name="android.app.lib_name" android:value="main" />
             
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
