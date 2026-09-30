@@ -406,52 +406,75 @@ if os.path.exists(p_c):
     with open(p_c, "r") as f:
         c = f.read()
 
-    # 1. Provide an exportable native window setter so NativeActivity can pass ANativeWindow directly
+    # 1. Expose g_sdl_native_window
     if "ANativeWindow *g_sdl_native_window" not in c:
         c = "ANativeWindow *g_sdl_native_window = NULL;\n" + c
-        c = c.replace("ANativeWindow *Android_JNI_GetNativeWindow(void)\n{",
-                      "ANativeWindow *Android_JNI_GetNativeWindow(void)\n{\n    if (g_sdl_native_window) return g_sdl_native_window;\n    if (!mActivityClass) return NULL;")
 
-    # 2. Guard all Android_JNI_* functions that dereference env / mActivityClass
-    # In Android_JNI_GetEnv, if no JavaVM, return NULL safely
-    c = c.replace("JNIEnv *env = Android_JNI_GetEnv();", "JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;")
+    # 2. Patch specific functions safely
+    safe_patches = {
+        "void Android_JNI_InitTouch(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "void Android_JNI_InitTouch(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
 
-    # Fix functions with non-void return values
-    c = c.replace("bool Android_JNI_SetClipboardText(const char *text)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
-                  "bool Android_JNI_SetClipboardText(const char *text)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+        "void Android_JNI_SetOrientation(int w, int h, int resizable, const char *hint)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "void Android_JNI_SetOrientation(int w, int h, int resizable, const char *hint)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
 
-    c = c.replace("char *Android_JNI_GetClipboardText(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
-                  "char *Android_JNI_GetClipboardText(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return SDL_strdup(\"\");")
+        "void Android_JNI_SetActivityTitle(const char *title)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "void Android_JNI_SetActivityTitle(const char *title)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
 
-    c = c.replace("bool Android_JNI_HasClipboardText(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
-                  "bool Android_JNI_HasClipboardText(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+        "void Android_JNI_SetWindowStyle(bool fullscreen)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "void Android_JNI_SetWindowStyle(bool fullscreen)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
 
-    c = c.replace("int Android_JNI_CreateCustomCursor(SDL_Surface *surface, int hot_x, int hot_y)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
-                  "int Android_JNI_CreateCustomCursor(SDL_Surface *surface, int hot_x, int hot_y)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return 0;")
+        "void Android_JNI_MinimizeWindow(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "void Android_JNI_MinimizeWindow(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
 
-    c = c.replace("bool Android_JNI_SetCustomCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
-                  "bool Android_JNI_SetCustomCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+        "bool Android_JNI_ShouldMinimizeOnFocusLoss(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "bool Android_JNI_ShouldMinimizeOnFocusLoss(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;",
 
-    c = c.replace("bool Android_JNI_SetSystemCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
-                  "bool Android_JNI_SetSystemCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+        "void Android_JNI_ShowScreenKeyboard(int input_type, SDL_Rect *inputRect)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "void Android_JNI_ShowScreenKeyboard(int input_type, SDL_Rect *inputRect)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
 
-    c = c.replace("bool Android_JNI_SupportsRelativeMouse(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
-                  "bool Android_JNI_SupportsRelativeMouse(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+        "ANativeWindow *Android_JNI_GetNativeWindow(void)\n{\n    ANativeWindow *anw = NULL;\n    jobject s;\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "ANativeWindow *Android_JNI_GetNativeWindow(void)\n{\n    if (g_sdl_native_window) return g_sdl_native_window;\n    ANativeWindow *anw = NULL;\n    jobject s;\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return NULL;",
 
-    c = c.replace("bool Android_JNI_SetRelativeMouseEnabled(bool enabled)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
-                  "bool Android_JNI_SetRelativeMouseEnabled(bool enabled)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+        "bool Android_JNI_SetClipboardText(const char *text)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "bool Android_JNI_SetClipboardText(const char *text)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;",
 
-    c = c.replace("bool Android_JNI_ShouldMinimizeOnFocusLoss(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
-                  "bool Android_JNI_ShouldMinimizeOnFocusLoss(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+        "char *Android_JNI_GetClipboardText(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "char *Android_JNI_GetClipboardText(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return SDL_strdup(\"\");",
 
-    c = c.replace("bool Android_JNI_SendMessage(int command, int param)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
-                  "bool Android_JNI_SendMessage(int command, int param)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+        "bool Android_JNI_HasClipboardText(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "bool Android_JNI_HasClipboardText(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;",
 
-    c = c.replace("bool Android_JNI_ShowToast(const char *message, int duration, int gravity, int xOffset, int yOffset)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
-                  "bool Android_JNI_ShowToast(const char *message, int duration, int gravity, int xOffset, int yOffset)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+        "int Android_JNI_CreateCustomCursor(SDL_Surface *surface, int hot_x, int hot_y)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "int Android_JNI_CreateCustomCursor(SDL_Surface *surface, int hot_x, int hot_y)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return 0;",
 
-    c = c.replace("bool Android_JNI_OpenURL(const char *url)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
-                  "bool Android_JNI_OpenURL(const char *url)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;")
+        "void Android_JNI_DestroyCustomCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "void Android_JNI_DestroyCustomCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return;",
+
+        "bool Android_JNI_SetCustomCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "bool Android_JNI_SetCustomCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;",
+
+        "bool Android_JNI_SetSystemCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "bool Android_JNI_SetSystemCursor(int cursorID)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;",
+
+        "bool Android_JNI_SupportsRelativeMouse(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "bool Android_JNI_SupportsRelativeMouse(void)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;",
+
+        "bool Android_JNI_SetRelativeMouseEnabled(bool enabled)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "bool Android_JNI_SetRelativeMouseEnabled(bool enabled)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;",
+
+        "bool Android_JNI_SendMessage(int command, int param)\n{\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "bool Android_JNI_SendMessage(int command, int param)\n{\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;",
+
+        "bool Android_JNI_ShowToast(const char *message, int duration, int gravity, int xOffset, int yOffset)\n{\n    bool result;\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "bool Android_JNI_ShowToast(const char *message, int duration, int gravity, int xOffset, int yOffset)\n{\n    bool result;\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;",
+
+        "bool Android_JNI_OpenURL(const char *url)\n{\n    bool result;\n    JNIEnv *env = Android_JNI_GetEnv();":
+        "bool Android_JNI_OpenURL(const char *url)\n{\n    bool result;\n    JNIEnv *env = Android_JNI_GetEnv();\n    if (!env || !mActivityClass) return false;"
+    }
+
+    for k, v in safe_patches.items():
+        c = c.replace(k, v)
 
     with open(p_c, "w") as f:
         f.write(c)
@@ -460,7 +483,6 @@ p_w = "SDL/src/video/android/SDL_androidwindow.c"
 if os.path.exists(p_w):
     with open(p_w, "r") as f:
         w = f.read()
-    # In Android_CreateWindow, ensure native_window can be fetched from g_sdl_native_window
     w = w.replace("extern ANativeWindow *g_sdl_native_window;", "")
     w = "extern ANativeWindow *g_sdl_native_window;\n" + w
     w = w.replace("data->native_window = Android_JNI_GetNativeWindow();",
