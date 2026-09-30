@@ -244,6 +244,23 @@ if [ -f "${BLENDER_SRC}/source/blender/modifiers/intern/MOD_grease_pencil_build.
     sed -i 's/Pair &a, Pair &b/const Pair \&a, const Pair \&b/g' "${BLENDER_SRC}/source/blender/modifiers/intern/MOD_grease_pencil_build.cc"
 fi
 
+# Guard GPU_storagebuf functions against nullptr ssbo
+if [ -f "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc" ]; then
+    sed -i 's/void GPU_storagebuf_usage_size_set(gpu::StorageBuf \*ssbo, size_t usage_size)/void GPU_storagebuf_usage_size_set(gpu::StorageBuf \*ssbo, size_t usage_size) { if (!ssbo) return;/' "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc"
+    sed -i 's/void GPU_storagebuf_update(gpu::StorageBuf \*ssbo, const void \*data)/void GPU_storagebuf_update(gpu::StorageBuf \*ssbo, const void \*data) { if (!ssbo) return;/' "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc"
+    sed -i 's/void GPU_storagebuf_bind(gpu::StorageBuf \*ssbo, int slot)/void GPU_storagebuf_bind(gpu::StorageBuf \*ssbo, int slot) { if (!ssbo) return;/' "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc"
+    sed -i 's/void GPU_storagebuf_unbind(gpu::StorageBuf \*ssbo)/void GPU_storagebuf_unbind(gpu::StorageBuf \*ssbo) { if (!ssbo) return;/' "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc"
+    sed -i 's/void GPU_storagebuf_clear(gpu::StorageBuf \*ssbo, uint32_t clear_value)/void GPU_storagebuf_clear(gpu::StorageBuf \*ssbo, uint32_t clear_value) { if (!ssbo) return;/' "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc"
+    sed -i 's/void GPU_storagebuf_sync_to_host(gpu::StorageBuf \*ssbo)/void GPU_storagebuf_sync_to_host(gpu::StorageBuf \*ssbo) { if (!ssbo) return;/' "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc"
+    sed -i 's/void GPU_storagebuf_read(gpu::StorageBuf \*ssbo, void \*data)/void GPU_storagebuf_read(gpu::StorageBuf \*ssbo, void \*data) { if (!ssbo) return;/' "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc"
+fi
+
+# Guard StorageCommon::push_update against nullptr ssbo in DRW_gpu_wrapper.hh
+if [ -f "${BLENDER_SRC}/source/blender/draw/intern/DRW_gpu_wrapper.hh" ]; then
+    sed -i 's/GPU_storagebuf_update(ssbo_, this->data_);/if (ssbo_) GPU_storagebuf_update(ssbo_, this->data_);/' "${BLENDER_SRC}/source/blender/draw/intern/DRW_gpu_wrapper.hh"
+fi
+
+
 # Add ANativeActivity entry point and Vulkan NDK compatibility stubs to creator.cc
 if [ -f "${BLENDER_SRC}/source/creator/creator.cc" ]; then
     # Rename main to blender_main_impl and provide extern "C" SDL_main for SDLActivity
