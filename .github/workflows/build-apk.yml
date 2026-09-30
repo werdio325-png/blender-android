@@ -88,8 +88,16 @@ jobs:
           export CCACHE_MAXSIZE="3G"
           ccache -z
           chmod +x scripts/build_blender.sh
-          ./scripts/build_blender.sh
+          ./scripts/build_blender.sh 2>&1 | tee build.log
           ccache -s
+
+      - name: Upload Build Log on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-failure-log
+          path: build.log
+          retention-days: 7
 
       - name: Upload Blender APK
         uses: actions/upload-artifact@v4
