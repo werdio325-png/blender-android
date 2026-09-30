@@ -18,6 +18,15 @@ fi
 
 TOOLCHAIN="${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64"
 CMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake"
+TARGET_TRIPLE="aarch64-linux-android"
+export CC="${TOOLCHAIN}/bin/${TARGET_TRIPLE}${API_LEVEL}-clang"
+export CXX="${TOOLCHAIN}/bin/${TARGET_TRIPLE}${API_LEVEL}-clang++"
+export AR="${TOOLCHAIN}/bin/llvm-ar"
+export RANLIB="${TOOLCHAIN}/bin/llvm-ranlib"
+export READELF="${TOOLCHAIN}/bin/llvm-readelf"
+export CFLAGS="-fPIC -ftls-model=global-dynamic"
+export CXXFLAGS="-fPIC -ftls-model=global-dynamic"
+export LDFLAGS="-fPIC"
 
 echo "===> Unpacking dependencies sysroot..."
 if [ -f "blender-deps-android-arm64.tar.gz" ]; then
@@ -219,6 +228,7 @@ if os.path.exists(p_w):
         f.write(w)
 SDL_PYEOF
 
+rm -rf build-sdl
 cmake -B build-sdl -S SDL -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
     -DANDROID_ABI=arm64-v8a \
