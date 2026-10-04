@@ -493,41 +493,7 @@ with open(p, 'w') as f:
 "
 fi
 
-# Fallback window creation in wm_init_exit.cc if wm->windows is empty on Android
-if [ -f "${BLENDER_SRC}/source/blender/windowmanager/intern/wm_init_exit.cc" ]; then
-    python3 -c "
-p = '${BLENDER_SRC}/source/blender/windowmanager/intern/wm_init_exit.cc'
-with open(p, 'r') as f:
-    c = f.read()
-target = '''    if (wm == nullptr || wm->windows.is_empty()) {
-      if (params_file_read_post != nullptr) {
-        MEM_delete_void(static_cast<void *>(params_file_read_post));
-        params_file_read_post = nullptr;
-      }
-      WM_exit(C, EXIT_FAILURE);
-    }'''
-repl = '''    if (wm == nullptr || wm->windows.is_empty()) {
-      printf(\"BlenderNative: wm windows is empty! Attempting fallback wm_add_default...\\n\");
-      wm_add_default(CTX_data_main(C), C);
-      wm = CTX_wm_manager(C);
-      if (wm != nullptr) {
-        wm_window_ghostwindows_ensure(wm);
-      }
-    }
-    if (wm == nullptr || wm->windows.is_empty()) {
-      printf(\"BlenderNative: wm windows still empty, exiting\\n\");
-      if (params_file_read_post != nullptr) {
-        MEM_delete_void(static_cast<void *>(params_file_read_post));
-        params_file_read_post = nullptr;
-      }
-      WM_exit(C, EXIT_FAILURE);
-    }'''
-if target in c:
-    c = c.replace(target, repl)
-with open(p, 'w') as f:
-    f.write(c)
-"
-fi
+
 
 echo "===> Patching Blender CMake for native host code generators and dependencies..."
 python3 << 'PYEOF'
