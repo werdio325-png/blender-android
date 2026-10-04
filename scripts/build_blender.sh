@@ -250,7 +250,7 @@ fi
 
 # Allow mobile Vulkan devices (Mali, Adreno) on Android by skipping desktop-only requirements in vk_backend.cc
 if [ -f "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_backend.cc" ]; then
-    sed -i 's/static Vector<StringRefNull> missing_capabilities_get(VkPhysicalDevice vk_physical_device)/static Vector<StringRefNull> missing_capabilities_get(VkPhysicalDevice vk_physical_device) {\n#ifdef __ANDROID__\n  return {};\n#endif/' "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_backend.cc"
+    sed -i 's/Vector<StringRefNull> missing_capabilities;/#ifdef __ANDROID__\n  return {};\n#endif\n  Vector<StringRefNull> missing_capabilities;/' "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_backend.cc"
 fi
 
 # Relax desktop-only mandatory features in GHOST_ContextVK.cc for Android GPUs
