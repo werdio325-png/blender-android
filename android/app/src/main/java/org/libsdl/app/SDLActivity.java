@@ -1,5 +1,13 @@
 package org.libsdl.app;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.zip.ZipFile;
+import java.util.zip.ZipEntry;
+import java.util.Enumeration;
+
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
