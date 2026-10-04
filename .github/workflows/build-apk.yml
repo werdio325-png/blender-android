@@ -88,6 +88,7 @@ jobs:
           export CCACHE_MAXSIZE="3G"
           ccache -z
           chmod +x scripts/build_blender.sh
+          set -eo pipefail
           ./scripts/build_blender.sh 2>&1 | tee build.log
           ccache -s
 
@@ -113,6 +114,6 @@ jobs:
           tag_name: v5.2.0-android-preview
           name: Blender 5.2 Android ARM64 Preview
           files: Blender-Android-arm64.apk
-          overwrite: true
+          overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
