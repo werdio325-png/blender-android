@@ -171,11 +171,15 @@ if [ ! -f "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake" ]; the
     exit 1
 fi
 
-echo "===> Downloading critical runtime datafiles..."
-mkdir -p "${BLENDER_SRC}/release/datafiles"
+echo "===> Downloading critical runtime datafiles and fonts..."
+mkdir -p "${BLENDER_SRC}/release/datafiles/fonts"
 for f in startup.blend preview.blend preview_grease_pencil.blend splash.png; do
     echo "Downloading ${f}..."
     curl -sL "https://projects.blender.org/blender/blender/media/branch/main/release/datafiles/${f}" -o "${BLENDER_SRC}/release/datafiles/${f}" || true
+done
+for f in Inter.woff2 DejaVuSansMono.woff2; do
+    echo "Downloading font ${f}..."
+    curl -sL "https://projects.blender.org/blender/blender/media/branch/main/release/datafiles/fonts/${f}" -o "${BLENDER_SRC}/release/datafiles/fonts/${f}" || true
 done
 
 echo "===> Patching Blender CMake for Android ARM64..."
@@ -244,15 +248,31 @@ if [ -f "${BLENDER_SRC}/source/blender/modifiers/intern/MOD_grease_pencil_build.
     sed -i 's/Pair &a, Pair &b/const Pair \&a, const Pair \&b/g' "${BLENDER_SRC}/source/blender/modifiers/intern/MOD_grease_pencil_build.cc"
 fi
 
-# Guard GPU_storagebuf functions against nullptr ssbo
+# Allow mobile Vulkan devices (Mali, Adreno) on Android by skipping desktop-only requirements in vk_backend.cc
+if [ -f "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_backend.cc" ]; then
+    sed -i 's/static Vector<StringRefNull> missing_capabilities_get(VkPhysicalDevice vk_physical_device)/static Vector<StringRefNull> missing_capabilities_get(VkPhysicalDevice vk_physical_device) {\n#ifdef __ANDROID__\n  return {};\n#endif/' "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_backend.cc"
+fi
+
+# Relax desktop-only mandatory features in GHOST_ContextVK.cc for Android GPUs
+if [ -f "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc" ]; then
+    sed -i 's/device_features.dualSrcBlend = VK_TRUE;/device_features.dualSrcBlend = device.features.features.dualSrcBlend;/' "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc"
+    sed -i 's/device_features.drawIndirectFirstInstance = VK_TRUE;/device_features.drawIndirectFirstInstance = device.features.features.drawIndirectFirstInstance;/' "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc"
+    sed -i 's/device_features.imageCubeArray = VK_TRUE;/device_features.imageCubeArray = device.features.features.imageCubeArray;/' "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc"
+    sed -i 's/device_features.fragmentStoresAndAtomics = VK_TRUE;/device_features.fragmentStoresAndAtomics = device.features.features.fragmentStoresAndAtomics;/' "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc"
+fi
+
+# Guard GPU_storagebuf functions against nullptr ssbo safely
 if [ -f "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc" ]; then
-    sed -i 's/void GPU_storagebuf_usage_size_set(gpu::StorageBuf \*ssbo, size_t usage_size)/void GPU_storagebuf_usage_size_set(gpu::StorageBuf \*ssbo, size_t usage_size) { if (!ssbo) return;/' "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc"
-    sed -i 's/void GPU_storagebuf_update(gpu::StorageBuf \*ssbo, const void \*data)/void GPU_storagebuf_update(gpu::StorageBuf \*ssbo, const void \*data) { if (!ssbo) return;/' "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc"
-    sed -i 's/void GPU_storagebuf_bind(gpu::StorageBuf \*ssbo, int slot)/void GPU_storagebuf_bind(gpu::StorageBuf \*ssbo, int slot) { if (!ssbo) return;/' "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc"
-    sed -i 's/void GPU_storagebuf_unbind(gpu::StorageBuf \*ssbo)/void GPU_storagebuf_unbind(gpu::StorageBuf \*ssbo) { if (!ssbo) return;/' "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc"
-    sed -i 's/void GPU_storagebuf_clear(gpu::StorageBuf \*ssbo, uint32_t clear_value)/void GPU_storagebuf_clear(gpu::StorageBuf \*ssbo, uint32_t clear_value) { if (!ssbo) return;/' "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc"
-    sed -i 's/void GPU_storagebuf_sync_to_host(gpu::StorageBuf \*ssbo)/void GPU_storagebuf_sync_to_host(gpu::StorageBuf \*ssbo) { if (!ssbo) return;/' "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc"
-    sed -i 's/void GPU_storagebuf_read(gpu::StorageBuf \*ssbo, void \*data)/void GPU_storagebuf_read(gpu::StorageBuf \*ssbo, void \*data) { if (!ssbo) return;/' "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc"
+    python3 -c "
+p = '${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc'
+with open(p, 'r') as f:
+    c = f.read()
+import re
+for fn in ['usage_size_set', 'update', 'bind', 'unbind', 'clear', 'clear_to_zero', 'sync_to_host', 'read']:
+    c = re.sub(rf'(void GPU_storagebuf_{fn}\\([^)]*StorageBuf \\*ssbo[^)]*\\)\\s*\\{{)', r'\\1\\n  if (!ssbo) return;', c)
+with open(p, 'w') as f:
+    f.write(c)
+"
 fi
 
 # Guard StorageCommon::push_update against nullptr ssbo in DRW_gpu_wrapper.hh
