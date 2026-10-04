@@ -113,5 +113,6 @@ jobs:
           tag_name: v5.2.0-android-preview
           name: Blender 5.2 Android ARM64 Preview
           files: Blender-Android-arm64.apk
+          overwrite: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
