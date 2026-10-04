@@ -2442,6 +2442,85 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         }
         return result;
     }
+
+    private void extractAssetsIfNeeded() {
+        try {
+            File filesDir = getFilesDir();
+            File marker = new File(filesDir, ".assets_extracted_v1");
+            if (marker.exists()) {
+                Log.i(TAG, "Blender assets already extracted.");
+                return;
+            }
+            Log.i(TAG, "Extracting Blender assets from APK into " + filesDir.getAbsolutePath() + "...");
+            String apkPath = getPackageCodePath();
+            try (ZipFile zip = new ZipFile(apkPath)) {
+                Enumeration<? extends ZipEntry> entries = zip.entries();
+                byte[] buf = new byte[65536];
+                while (entries.hasMoreElements()) {
+                    ZipEntry entry = entries.nextElement();
+                    String name = entry.getName();
+                    if (name.startsWith("assets/") && !entry.isDirectory()) {
+                        String relName = name.substring("assets/".length());
+                        File destFile = new File(filesDir, relName);
+                        File parent = destFile.getParentFile();
+                        if (parent != null && !parent.exists()) {
+                            parent.mkdirs();
+                        }
+                        try (InputStream in = zip.getInputStream(entry);
+                             OutputStream out = new FileOutputStream(destFile)) {
+                            int r;
+                            while ((r = in.read(buf)) > 0) {
+                                out.write(buf, 0, r);
+                            }
+                        }
+                    }
+                }
+            }
+            File verDir = new File(filesDir, "5.2");
+            verDir.mkdirs();
+            File datafilesSrc = new File(filesDir, "datafiles");
+            File datafilesDst = new File(verDir, "datafiles");
+            if (!datafilesDst.exists() && datafilesSrc.exists()) {
+                try {
+                    android.system.Os.symlink(datafilesSrc.getAbsolutePath(), datafilesDst.getAbsolutePath());
+                } catch (Exception e) {
+                    Log.w(TAG, "Symlink datafiles failed: " + e.getMessage());
+                }
+            }
+            File scriptsSrc = new File(filesDir, "scripts");
+            File scriptsDst = new File(verDir, "scripts");
+            if (!scriptsDst.exists() && scriptsSrc.exists()) {
+                try {
+                    android.system.Os.symlink(scriptsSrc.getAbsolutePath(), scriptsDst.getAbsolutePath());
+                } catch (Exception e) {
+                    Log.w(TAG, "Symlink scripts failed: " + e.getMessage());
+                }
+            }
+            marker.createNewFile();
+            Log.i(TAG, "Blender assets extracted successfully.");
+        } catch (Exception e) {
+            Log.e(TAG, "Error extracting Blender assets: " + e.getMessage(), e);
+        }
+    }
+
+    private void setupBlenderEnvironment() {
+        try {
+            String filesDir = getFilesDir().getAbsolutePath();
+            String cacheDir = getCacheDir().getAbsolutePath();
+            android.system.Os.setenv("HOME", filesDir, true);
+            android.system.Os.setenv("TMPDIR", cacheDir, true);
+            android.system.Os.setenv("BLENDER_USER_CONFIG", filesDir + "/config/blender/5.2", true);
+            android.system.Os.setenv("BLENDER_SYSTEM_DATAFILES", filesDir + "/datafiles", true);
+            android.system.Os.setenv("BLENDER_SYSTEM_SCRIPTS", filesDir + "/scripts", true);
+            android.system.Os.setenv("BLENDER_SYSTEM_RESOURCES", filesDir, true);
+            android.system.Os.setenv("PYTHONHOME", filesDir + "/python", true);
+            android.system.Os.setenv("PYTHONPATH", filesDir + "/python/lib/python3.13:" + filesDir + "/scripts/modules", true);
+            Log.i(TAG, "Blender environment variables configured.");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed setting Blender environment: " + e.getMessage());
+        }
+    }
+
 }
 
 /**
@@ -2523,84 +2602,6 @@ class SDLClipboardHandler implements
     @Override
     public void onPrimaryClipChanged() {
         SDLActivity.onNativeClipboardChanged();
-    }
-
-    private void extractAssetsIfNeeded() {
-        try {
-            File filesDir = getFilesDir();
-            File marker = new File(filesDir, ".assets_extracted_v1");
-            if (marker.exists()) {
-                Log.i(TAG, "Blender assets already extracted.");
-                return;
-            }
-            Log.i(TAG, "Extracting Blender assets from APK into " + filesDir.getAbsolutePath() + "...");
-            String apkPath = getPackageCodePath();
-            try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(apkPath)) {
-                java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zip.entries();
-                byte[] buf = new byte[65536];
-                while (entries.hasMoreElements()) {
-                    java.util.zip.ZipEntry entry = entries.nextElement();
-                    String name = entry.getName();
-                    if (name.startsWith("assets/") && !entry.isDirectory()) {
-                        String relName = name.substring("assets/".length());
-                        File destFile = new File(filesDir, relName);
-                        File parent = destFile.getParentFile();
-                        if (parent != null && !parent.exists()) {
-                            parent.mkdirs();
-                        }
-                        try (java.io.InputStream in = zip.getInputStream(entry);
-                             java.io.OutputStream out = new java.io.FileOutputStream(destFile)) {
-                            int r;
-                            while ((r = in.read(buf)) > 0) {
-                                out.write(buf, 0, r);
-                            }
-                        }
-                    }
-                }
-            }
-            File verDir = new File(filesDir, "5.2");
-            verDir.mkdirs();
-            File datafilesSrc = new File(filesDir, "datafiles");
-            File datafilesDst = new File(verDir, "datafiles");
-            if (!datafilesDst.exists() && datafilesSrc.exists()) {
-                try {
-                    android.system.Os.symlink(datafilesSrc.getAbsolutePath(), datafilesDst.getAbsolutePath());
-                } catch (Exception e) {
-                    Log.w(TAG, "Symlink datafiles failed: " + e.getMessage());
-                }
-            }
-            File scriptsSrc = new File(filesDir, "scripts");
-            File scriptsDst = new File(verDir, "scripts");
-            if (!scriptsDst.exists() && scriptsSrc.exists()) {
-                try {
-                    android.system.Os.symlink(scriptsSrc.getAbsolutePath(), scriptsDst.getAbsolutePath());
-                } catch (Exception e) {
-                    Log.w(TAG, "Symlink scripts failed: " + e.getMessage());
-                }
-            }
-            marker.createNewFile();
-            Log.i(TAG, "Blender assets extracted successfully.");
-        } catch (Exception e) {
-            Log.e(TAG, "Error extracting Blender assets: " + e.getMessage(), e);
-        }
-    }
-
-    private void setupBlenderEnvironment() {
-        try {
-            String filesDir = getFilesDir().getAbsolutePath();
-            String cacheDir = getCacheDir().getAbsolutePath();
-            android.system.Os.setenv("HOME", filesDir, true);
-            android.system.Os.setenv("TMPDIR", cacheDir, true);
-            android.system.Os.setenv("BLENDER_USER_CONFIG", filesDir + "/config/blender/5.2", true);
-            android.system.Os.setenv("BLENDER_SYSTEM_DATAFILES", filesDir + "/datafiles", true);
-            android.system.Os.setenv("BLENDER_SYSTEM_SCRIPTS", filesDir + "/scripts", true);
-            android.system.Os.setenv("BLENDER_SYSTEM_RESOURCES", filesDir, true);
-            android.system.Os.setenv("PYTHONHOME", filesDir + "/python", true);
-            android.system.Os.setenv("PYTHONPATH", filesDir + "/python/lib/python3.13:" + filesDir + "/scripts/modules", true);
-            Log.i(TAG, "Blender environment variables configured.");
-        } catch (Exception e) {
-            Log.e(TAG, "Failed setting Blender environment: " + e.getMessage());
-        }
     }
 
 }
