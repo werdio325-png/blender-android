@@ -328,6 +328,28 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char *a
     SDL_SetHint("SDL_APP_ID", "org.blender.app");
     SDL_SetAppMetadata("Blender", "5.2.0", "org.blender.app");
 
+    const char *files_dir = getenv("HOME");
+    if (!files_dir || files_dir[0] == '\0') {
+        files_dir = "/data/user/0/org.blender.app/files";
+    }
+    setenv("HOME", files_dir, 1);
+    chdir(files_dir);
+
+    char env_buf[1024];
+    snprintf(env_buf, sizeof(env_buf), "%s/datafiles", files_dir);
+    setenv("BLENDER_SYSTEM_DATAFILES", env_buf, 1);
+    snprintf(env_buf, sizeof(env_buf), "%s/scripts", files_dir);
+    setenv("BLENDER_SYSTEM_SCRIPTS", env_buf, 1);
+    snprintf(env_buf, sizeof(env_buf), "%s/config/blender/5.2", files_dir);
+    setenv("BLENDER_USER_CONFIG", env_buf, 1);
+    setenv("BLENDER_SYSTEM_RESOURCES", files_dir, 1);
+    snprintf(env_buf, sizeof(env_buf), "%s/python", files_dir);
+    setenv("PYTHONHOME", env_buf, 1);
+    snprintf(env_buf, sizeof(env_buf), "%s/python/lib/python3.13:%s/scripts/modules", files_dir, files_dir);
+    setenv("PYTHONPATH", env_buf, 1);
+
+    ALOGI("Blender paths: DATAFILES=%s/datafiles, SCRIPTS=%s/scripts", files_dir, files_dir);
+
     const char *ui_argv[] = {"blender", nullptr};
     int ret = blender_main_impl(1, ui_argv);
     ALOGI("blender_main_impl finished with code: %d", ret);
@@ -452,6 +474,59 @@ if(ANDROID)
   target_link_libraries(blender PRIVATE android log dl vulkan)
 endif()
 CEOF
+fi
+
+
+# Ensure Android Vulkan swapchain supports both COLOR_ATTACHMENT and TRANSFER_DST
+if [ -f "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc" ]; then
+    python3 -c "
+p = '${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc'
+with open(p, 'r') as f:
+    c = f.read()
+target = 'create_info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |'
+repl = '''VkImageUsageFlags desired_usage = (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  create_info.imageUsage = desired_usage |'''
+if target in c:
+    c = c.replace(target, repl)
+with open(p, 'w') as f:
+    f.write(c)
+"
+fi
+
+# Fallback window creation in wm_init_exit.cc if wm->windows is empty on Android
+if [ -f "${BLENDER_SRC}/source/blender/windowmanager/intern/wm_init_exit.cc" ]; then
+    python3 -c "
+p = '${BLENDER_SRC}/source/blender/windowmanager/intern/wm_init_exit.cc'
+with open(p, 'r') as f:
+    c = f.read()
+target = '''    if (wm == nullptr || wm->windows.is_empty()) {
+      if (params_file_read_post != nullptr) {
+        MEM_delete_void(static_cast<void *>(params_file_read_post));
+        params_file_read_post = nullptr;
+      }
+      WM_exit(C, EXIT_FAILURE);
+    }'''
+repl = '''    if (wm == nullptr || wm->windows.is_empty()) {
+      printf(\"BlenderNative: wm windows is empty! Attempting fallback wm_add_default...\\n\");
+      wm_add_default(CTX_data_main(C), C);
+      wm = CTX_wm_manager(C);
+      if (wm != nullptr) {
+        wm_window_ghostwindows_ensure(wm);
+      }
+    }
+    if (wm == nullptr || wm->windows.is_empty()) {
+      printf(\"BlenderNative: wm windows still empty, exiting\\n\");
+      if (params_file_read_post != nullptr) {
+        MEM_delete_void(static_cast<void *>(params_file_read_post));
+        params_file_read_post = nullptr;
+      }
+      WM_exit(C, EXIT_FAILURE);
+    }'''
+if target in c:
+    c = c.replace(target, repl)
+with open(p, 'w') as f:
+    f.write(c)
+"
 fi
 
 echo "===> Patching Blender CMake for native host code generators and dependencies..."
