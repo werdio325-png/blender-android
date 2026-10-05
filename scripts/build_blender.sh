@@ -1301,12 +1301,76 @@ if os.path.exists(p_pkg):
     rep_pkg = '''    try:
         from _bpy_internal.assets.remote_library import listing_downloader
     except (ImportError, ModuleNotFoundError):
-        return'''
+        pass'''
     if t_pkg in c:
         c = c.replace(t_pkg, rep_pkg)
         with open(p_pkg, 'w') as f:
             f.write(c)
         print('Successfully patched bl_pkg/__init__.py')
+
+# 11. Patch icons.cc: BKE_icon_geom_from_memory must free MEM_mallocN memory via MEM_freeN
+p_icons = blender_src + "/source/blender/blenkernel/intern/icons.cc"
+if os.path.exists(p_icons):
+    with open(p_icons, "r") as f:
+        c = f.read()
+    t_icon = "std::unique_ptr<uchar> data_wrapper(std::move(data));"
+    rep_icon = "std::unique_ptr<uchar, void (*)(void *)> data_wrapper(data, MEM_freeN);"
+    if t_icon in c:
+        c = c.replace(t_icon, rep_icon)
+        c = c.replace("if (data_len <= 8) {\n    return nullptr;\n  }", "if (data == nullptr) { return nullptr; }\n  if (data_len <= 8) {\n    MEM_freeN(data);\n    return nullptr;\n  }")
+        with open(p_icons, "w") as f:
+            f.write(c)
+        print("Successfully patched icons.cc BKE_icon_geom_from_memory")
+
+# 12. Patch gpu_context.cc: default backend to Vulkan when OpenGL is off
+p_ctx = blender_src + "/source/blender/gpu/intern/gpu_context.cc"
+if os.path.exists(p_ctx):
+    with open(p_ctx, "r") as f:
+        c = f.read()
+    c = c.replace("static GPUBackendType g_backend_type = GPU_BACKEND_OPENGL;", "#if defined(WITH_VULKAN_BACKEND) && !defined(WITH_OPENGL_BACKEND)\nstatic GPUBackendType g_backend_type = GPU_BACKEND_VULKAN;\n#else\nstatic GPUBackendType g_backend_type = GPU_BACKEND_OPENGL;\n#endif")
+    with open(p_ctx, "w") as f:
+        f.write(c)
+    print("Successfully patched gpu_context.cc default backend")
+
+# 13. Patch wm_window.cc: fallback to Vulkan when ANY or OPENGL is selected
+p_wmw = blender_src + "/source/blender/windowmanager/intern/wm_window.cc"
+if os.path.exists(p_wmw):
+    with open(p_wmw, "r") as f:
+        c = f.read()
+    t_wmw = """    case GPU_BACKEND_ANY:
+    case GPU_BACKEND_OPENGL:
+#ifdef WITH_OPENGL_BACKEND
+      return GHOST_kDrawingContextTypeOpenGL;
+#endif"""
+    rep_wmw = """    case GPU_BACKEND_ANY:
+    case GPU_BACKEND_OPENGL:
+#ifdef WITH_OPENGL_BACKEND
+      return GHOST_kDrawingContextTypeOpenGL;
+#elif defined(WITH_VULKAN_BACKEND)
+      return GHOST_kDrawingContextTypeVulkan;
+#endif"""
+    if t_wmw in c:
+        c = c.replace(t_wmw, rep_wmw)
+        with open(p_wmw, "w") as f:
+            f.write(c)
+        print("Successfully patched wm_window.cc backend fallback")
+
+# 14. Patch wm_platform_support.cc: bypass desktop GPU requirement on Android
+p_ps = blender_src + "/source/blender/windowmanager/intern/wm_platform_support.cc"
+if os.path.exists(p_ps):
+    with open(p_ps, "r") as f:
+        c = f.read()
+    t_ps = "bool WM_platform_support_perform_checks()"
+    rep_ps = """bool WM_platform_support_perform_checks()
+{
+#ifdef __ANDROID__
+  return true;
+#endif"""
+    if t_ps in c:
+        c = c.replace(t_ps, rep_ps)
+        with open(p_ps, "w") as f:
+            f.write(c)
+        print("Successfully patched wm_platform_support.cc for Android")
 
 PYEOF
 
@@ -1382,8 +1446,8 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char *a
 
     ALOGI("Blender paths: DATAFILES=%s/datafiles, SCRIPTS=%s/scripts", files_dir, files_dir);
 
-    const char *ui_argv[] = {"blender", nullptr};
-    int ret = blender_main_impl(1, ui_argv);
+    const char *ui_argv[] = {"blender", "--gpu-backend", "vulkan", nullptr};
+    int ret = blender_main_impl(3, ui_argv);
     ALOGI("blender_main_impl finished with code: %d", ret);
     _exit(ret);
 }
