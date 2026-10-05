@@ -224,6 +224,17 @@ if [ ! -f "${BLENDER_SRC}/release/datafiles/fonts/Inter.ttf" ]; then
     cp -f "${BLENDER_SRC}/release/datafiles/fonts/Inter.ttf" "${BLENDER_SRC}/release/datafiles/fonts/DejaVuSansMono.ttf"
 fi
 
+echo "===> Updating GHOST SDL Vulkan backend files from upstream main..."
+GHOST_MAIN_URL="https://raw.githubusercontent.com/blender/blender/main/intern/ghost/intern"
+for f in GHOST_ContextVK.cc GHOST_ContextVK.hh GHOST_WindowSDL.cc GHOST_WindowSDL.hh GHOST_SystemSDL.cc; do
+    echo "Downloading ${f} from upstream main..."
+    curl -sL "${GHOST_MAIN_URL}/${f}" -o "${BLENDER_SRC}/intern/ghost/intern/${f}"
+done
+
+# Ensure GHOST CMakeLists.txt doesn't compile GHOST_ContextSDL.cc without OpenGL
+sed -i 's/intern\/GHOST_ContextSDL.cc//g' "${BLENDER_SRC}/intern/ghost/CMakeLists.txt"
+sed -i 's/intern\/GHOST_ContextSDL.hh//g' "${BLENDER_SRC}/intern/ghost/CMakeLists.txt"
+
 echo "===> Patching Blender CMake for Android ARM64..."
 # Bypass startup.blend size check
 sed -i 's/message(FATAL_ERROR "Detected incomplete startup blend/# &/' "${BLENDER_SRC}/CMakeLists.txt" 
