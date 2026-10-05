@@ -512,64 +512,142 @@ if os.path.exists(p):
 PYEOF
 fi
 
-# Add Vulkan context creation to GHOST_SystemSDL.cc and GHOST_WindowSDL.cc
-if [ -f "${BLENDER_SRC}/intern/ghost/intern/GHOST_SystemSDL.cc" ]; then
-    python3 - << 'PYEOF'
+# Add real on-screen SDL Vulkan swapchain support to GHOST_ContextVK and GHOST_WindowSDL
+python3 - << 'PYEOF'
 import os
-p_sys = os.environ.get('BLENDER_SRC', '') + '/intern/ghost/intern/GHOST_SystemSDL.cc'
+
+blender_src = os.environ.get('BLENDER_SRC', '')
+
+# 1. Update GHOST_ContextVK.hh to define GHOST_kVulkanPlatformSDL
+p_hh = blender_src + '/intern/ghost/intern/GHOST_ContextVK.hh'
+if os.path.exists(p_hh):
+    with open(p_hh, 'r') as f:
+        c = f.read()
+    t_enum = '''enum GHOST_TVulkanPlatformType {
+  GHOST_kVulkanPlatformHeadless = 0,'''
+    rep_enum = '''enum GHOST_TVulkanPlatformType {
+  GHOST_kVulkanPlatformHeadless = 0,
+  GHOST_kVulkanPlatformSDL = 3,'''
+    if t_enum in c:
+        c = c.replace(t_enum, rep_enum)
+        with open(p_hh, 'w') as f:
+            f.write(c)
+        print('Successfully patched GHOST_ContextVK.hh')
+
+# 2. Update GHOST_ContextVK.cc for SDL Vulkan surface and Android swapchain
+p_vk = blender_src + '/intern/ghost/intern/GHOST_ContextVK.cc'
+if os.path.exists(p_vk):
+    with open(p_vk, 'r') as f:
+        c = f.read()
+
+    # Include SDL headers for SDL_Vulkan_CreateSurface
+    if '<SDL3/SDL_vulkan.h>' not in c:
+        c = '#ifdef __ANDROID__\n#  include <SDL3/SDL.h>\n#  include <SDL3/SDL_vulkan.h>\n#endif\n' + c
+
+    # Platform surface extension
+    t_ext = '''    case GHOST_kVulkanPlatformHeadless:
+      break;
+  }
+#endif
+  return nullptr;
+}'''
+    rep_ext = '''    case GHOST_kVulkanPlatformSDL:
+      return "VK_KHR_android_surface";
+    case GHOST_kVulkanPlatformHeadless:
+      break;
+  }
+#endif
+  return nullptr;
+}'''
+    if t_ext in c:
+        c = c.replace(t_ext, rep_ext)
+        print('Patched getPlatformSpecificSurfaceExtension')
+
+    # use_window_surface
+    t_use = '''    case GHOST_kVulkanPlatformHeadless:
+      use_window_surface = false;
+      break;
+  }
+#endif'''
+    rep_use = '''    case GHOST_kVulkanPlatformSDL:
+      use_window_surface = (window_ != nullptr);
+      break;
+    case GHOST_kVulkanPlatformHeadless:
+      use_window_surface = false;
+      break;
+  }
+#endif'''
+    if t_use in c:
+        c = c.replace(t_use, rep_use)
+        print('Patched use_window_surface')
+
+    # Initialize VkSurface via SDL_Vulkan_CreateSurface
+    t_surf = '''      case GHOST_kVulkanPlatformHeadless: {
+        surface_ = VK_NULL_HANDLE;
+        break;
+      }'''
+    rep_surf = '''      case GHOST_kVulkanPlatformSDL: {
+#ifdef __ANDROID__
+        SDL_Window *sdl_window = static_cast<SDL_Window *>(window_);
+        if (!SDL_Vulkan_CreateSurface(sdl_window, instance_vk.vk_instance, nullptr, &surface_)) {
+          CLOG_ERROR(&LOG, "SDL_Vulkan_CreateSurface failed: %s", SDL_GetError());
+          return GHOST_kFailure;
+        }
+#endif
+        break;
+      }
+      case GHOST_kVulkanPlatformHeadless: {
+        surface_ = VK_NULL_HANDLE;
+        break;
+      }'''
+    if t_surf in c:
+        c = c.replace(t_surf, rep_surf)
+        print('Patched surface creation in GHOST_ContextVK.cc')
+
+    # Fallback in selectSurfaceFormat
+    t_fmt = '''    for (const VkSurfaceFormatKHR &format : formats) {
+      if (format.format == config.format && format.colorSpace == config.colorSpace) {
+        r_surfaceFormat = format;
+        return true;
+      }
+    }
+  }
+
+  return false;
+}'''
+    rep_fmt = '''    for (const VkSurfaceFormatKHR &format : formats) {
+      if (format.format == config.format && format.colorSpace == config.colorSpace) {
+        r_surfaceFormat = format;
+        return true;
+      }
+    }
+  }
+
+  if (!formats.empty()) {
+    r_surfaceFormat = formats[0];
+    return true;
+  }
+
+  return false;
+}'''
+    if t_fmt in c:
+        c = c.replace(t_fmt, rep_fmt)
+        print('Patched selectSurfaceFormat fallback')
+
+    with open(p_vk, 'w') as f:
+        f.write(c)
+    print('Successfully patched GHOST_ContextVK.cc')
+
+# 3. Update GHOST_SystemSDL.cc for offscreen Vulkan context (Headless)
+p_sys = blender_src + '/intern/ghost/intern/GHOST_SystemSDL.cc'
 if os.path.exists(p_sys):
     with open(p_sys, 'r') as f:
         c = f.read()
     if '#include "GHOST_ContextVK.hh"' not in c:
         c = '#include "GHOST_ContextVK.hh"\n' + c
-    target_sys = '''  switch (gpu_settings.context_type) {
-#ifdef WITH_OPENGL_BACKEND
-    case GHOST_kDrawingContextTypeOpenGL: {
-      for (int minor = 6; minor >= 3; --minor) {
-        GHOST_Context *context = new GHOST_ContextSDL(
-            context_params_offscreen,
-            nullptr,
-            0, /* Profile bit. */
-            4,
-            minor,
-            GHOST_OPENGL_SDL_CONTEXT_FLAGS,
-            GHOST_OPENGL_SDL_RESET_NOTIFICATION_STRATEGY);
-
-        if (context->initializeDrawingContext()) {
-          return context;
-        }
-        delete context;
-      }
-      return nullptr;
-    }
-#endif
-
-    default:
-      /* Unsupported backend. */
-      return nullptr;
-  }'''
-    repl_sys = '''  switch (gpu_settings.context_type) {
-#ifdef WITH_OPENGL_BACKEND
-    case GHOST_kDrawingContextTypeOpenGL: {
-      for (int minor = 6; minor >= 3; --minor) {
-        GHOST_Context *context = new GHOST_ContextSDL(
-            context_params_offscreen,
-            nullptr,
-            0, /* Profile bit. */
-            4,
-            minor,
-            GHOST_OPENGL_SDL_CONTEXT_FLAGS,
-            GHOST_OPENGL_SDL_RESET_NOTIFICATION_STRATEGY);
-
-        if (context->initializeDrawingContext()) {
-          return context;
-        }
-        delete context;
-      }
-      return nullptr;
-    }
-#endif
-
+    t_sys = '''  switch (gpu_settings.context_type) {
+#ifdef WITH_OPENGL_BACKEND'''
+    rep_sys = '''  switch (gpu_settings.context_type) {
 #ifdef WITH_VULKAN_BACKEND
     case GHOST_kDrawingContextTypeVulkan: {
       GHOST_Context *context = new GHOST_ContextVK(
@@ -590,80 +668,39 @@ if os.path.exists(p_sys):
       return nullptr;
     }
 #endif
+#ifdef WITH_OPENGL_BACKEND'''
+    if t_sys in c:
+        c = c.replace(t_sys, rep_sys)
+        with open(p_sys, 'w') as f:
+            f.write(c)
+        print('Successfully patched GHOST_SystemSDL.cc')
 
-    default:
-      /* Unsupported backend. */
-      return nullptr;
-  }'''
-    if target_sys in c:
-        c = c.replace(target_sys, repl_sys)
-        print('Patched GHOST_SystemSDL.cc with Vulkan offscreen support')
-    else:
-        print('ERROR: target_sys not found in GHOST_SystemSDL.cc')
-    with open(p_sys, 'w') as f:
-        f.write(c)
-
-p_win = os.environ.get('BLENDER_SRC', '') + '/intern/ghost/intern/GHOST_WindowSDL.cc'
+# 4. Update GHOST_WindowSDL.cc for on-screen SDL Vulkan swapchain context
+p_win = blender_src + '/intern/ghost/intern/GHOST_WindowSDL.cc'
 if os.path.exists(p_win):
     with open(p_win, 'r') as f:
         c = f.read()
     if '#include "GHOST_ContextVK.hh"' not in c:
         c = '#include "GHOST_ContextVK.hh"\n' + c
-    target_win = '''  switch (type) {
-#ifdef WITH_OPENGL_BACKEND
-    case GHOST_kDrawingContextTypeOpenGL: {
-      for (int minor = 6; minor >= 3; --minor) {
-        GHOST_Context *context = new GHOST_ContextSDL(
-            want_context_params_,
-            sdl_win_,
-            0, /* Profile bit. */
-            4,
-            minor,
-            GHOST_OPENGL_SDL_CONTEXT_FLAGS,
-            GHOST_OPENGL_SDL_RESET_NOTIFICATION_STRATEGY);
 
-        if (context->initializeDrawingContext()) {
-          return context;
-        }
-        delete context;
-      }
-      return nullptr;
-    }
-#endif
+    # Create window with SDL_WINDOW_VULKAN
+    t_create = 'sdl_win_ = SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);'
+    rep_create = 'sdl_win_ = SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE | (type == GHOST_kDrawingContextTypeVulkan ? SDL_WINDOW_VULKAN : SDL_WINDOW_OPENGL));'
+    if t_create in c:
+        c = c.replace(t_create, rep_create)
+        print('Patched SDL_CreateWindow with SDL_WINDOW_VULKAN')
 
-    default:
-      /* Unsupported backend. */
-      return nullptr;
-  }'''
-    repl_win = '''  switch (type) {
-#ifdef WITH_OPENGL_BACKEND
-    case GHOST_kDrawingContextTypeOpenGL: {
-      for (int minor = 6; minor >= 3; --minor) {
-        GHOST_Context *context = new GHOST_ContextSDL(
-            want_context_params_,
-            sdl_win_,
-            0, /* Profile bit. */
-            4,
-            minor,
-            GHOST_OPENGL_SDL_CONTEXT_FLAGS,
-            GHOST_OPENGL_SDL_RESET_NOTIFICATION_STRATEGY);
-
-        if (context->initializeDrawingContext()) {
-          return context;
-        }
-        delete context;
-      }
-      return nullptr;
-    }
-#endif
-
+    # Create drawing context with GHOST_kVulkanPlatformSDL and sdl_win_
+    t_win_ctx = '''  switch (want_context_type_) {
+#ifdef WITH_OPENGL_BACKEND'''
+    rep_win_ctx = '''  switch (want_context_type_) {
 #ifdef WITH_VULKAN_BACKEND
     case GHOST_kDrawingContextTypeVulkan: {
       GHOST_GPUDevice preferred_device = {};
       GHOST_Context *context = new GHOST_ContextVK(
           want_context_params_,
-          GHOST_kVulkanPlatformHeadless,
-          nullptr,
+          GHOST_kVulkanPlatformSDL,
+          (Window)sdl_win_,
           nullptr,
           nullptr,
           nullptr,
@@ -678,171 +715,15 @@ if os.path.exists(p_win):
       return nullptr;
     }
 #endif
+#ifdef WITH_OPENGL_BACKEND'''
+    if t_win_ctx in c:
+        c = c.replace(t_win_ctx, rep_win_ctx)
+        print('Patched newDrawingContext with GHOST_kVulkanPlatformSDL')
 
-    default:
-      /* Unsupported backend. */
-      return nullptr;
-  }'''
-    if target_win in c:
-        c = c.replace(target_win, repl_win)
-        print('Patched GHOST_WindowSDL.cc with Vulkan window support')
-    else:
-        print('ERROR: target_win not found in GHOST_WindowSDL.cc')
     with open(p_win, 'w') as f:
         f.write(c)
+    print('Successfully patched GHOST_WindowSDL.cc')
 PYEOF
-fi
-
-# Guard WM_system_gpu_context functions against nullptr in wm_window.cc
-if [ -f "${BLENDER_SRC}/source/blender/windowmanager/intern/wm_window.cc" ]; then
-    python3 - << 'PYEOF'
-import os
-p = os.environ.get('BLENDER_SRC', '') + '/source/blender/windowmanager/intern/wm_window.cc'
-if os.path.exists(p):
-    with open(p, 'r') as f:
-        c = f.read()
-
-    t_disp = '''void WM_system_gpu_context_dispose(GHOST_IContext *context)
-{
-  BLI_assert(GPU_framebuffer_active_get() == GPU_framebuffer_back_get());
-  g_system->disposeContext(context);
-}'''
-    rep_disp = '''void WM_system_gpu_context_dispose(GHOST_IContext *context)
-{
-  if (!context) return;
-  BLI_assert(GPU_framebuffer_active_get() == GPU_framebuffer_back_get());
-  if (g_system) {
-    g_system->disposeContext(context);
-  }
-}'''
-
-    t_act = '''void WM_system_gpu_context_activate(GHOST_IContext *context)
-{
-  BLI_assert(GPU_framebuffer_active_get() == GPU_framebuffer_back_get());
-  context->activateDrawingContext();
-}'''
-    rep_act = '''void WM_system_gpu_context_activate(GHOST_IContext *context)
-{
-  if (!context) return;
-  BLI_assert(GPU_framebuffer_active_get() == GPU_framebuffer_back_get());
-  context->activateDrawingContext();
-}'''
-
-    t_rel = '''void WM_system_gpu_context_release(GHOST_IContext *context)
-{
-  BLI_assert(GPU_framebuffer_active_get() == GPU_framebuffer_back_get());
-  context->releaseDrawingContext();
-}'''
-    rep_rel = '''void WM_system_gpu_context_release(GHOST_IContext *context)
-{
-  if (!context) return;
-  BLI_assert(GPU_framebuffer_active_get() == GPU_framebuffer_back_get());
-  context->releaseDrawingContext();
-}'''
-
-    if t_disp in c:
-        c = c.replace(t_disp, rep_disp)
-        print('Guarded WM_system_gpu_context_dispose')
-    if t_act in c:
-        c = c.replace(t_act, rep_act)
-        print('Guarded WM_system_gpu_context_activate')
-    if t_rel in c:
-        c = c.replace(t_rel, rep_rel)
-        print('Guarded WM_system_gpu_context_release')
-
-    with open(p, 'w') as f:
-        f.write(c)
-PYEOF
-fi
-
-# Guard ContextShared in draw_gpu_context.cc against nullptr offscreen context
-if [ -f "${BLENDER_SRC}/source/blender/draw/intern/draw_gpu_context.cc" ]; then
-    python3 - << 'PYEOF'
-import os
-p = os.environ.get('BLENDER_SRC', '') + '/source/blender/draw/intern/draw_gpu_context.cc'
-if os.path.exists(p):
-    with open(p, 'r') as f:
-        c = f.read()
-
-    t_ctor = '''    system_gpu_context_ = WM_system_gpu_context_create();
-    WM_system_gpu_context_activate(system_gpu_context_);
-    blender_gpu_context_ = GPU_context_create(nullptr, system_gpu_context_);'''
-    rep_ctor = '''    system_gpu_context_ = WM_system_gpu_context_create();
-    if (system_gpu_context_ != nullptr) {
-      WM_system_gpu_context_activate(system_gpu_context_);
-      blender_gpu_context_ = GPU_context_create(nullptr, system_gpu_context_);
-    }'''
-
-    t_dtor = '''  ~ContextShared()
-  {
-    WM_system_gpu_context_activate(system_gpu_context_);
-    GPU_context_active_set(blender_gpu_context_);
-
-    GPU_context_discard(blender_gpu_context_);
-    WM_system_gpu_context_dispose(system_gpu_context_);
-
-    BLI_ticket_mutex_free(mutex_);
-  }'''
-    rep_dtor = '''  ~ContextShared()
-  {
-    if (system_gpu_context_ != nullptr) {
-      WM_system_gpu_context_activate(system_gpu_context_);
-      GPU_context_active_set(blender_gpu_context_);
-
-      GPU_context_discard(blender_gpu_context_);
-      WM_system_gpu_context_dispose(system_gpu_context_);
-    }
-
-    BLI_ticket_mutex_free(mutex_);
-  }'''
-
-    t_en = '''    WM_system_gpu_context_activate(system_gpu_context_);
-    GPU_context_active_set(blender_gpu_context_);
-    GPU_context_begin_frame(blender_gpu_context_);'''
-    rep_en = '''    if (system_gpu_context_ != nullptr) {
-      WM_system_gpu_context_activate(system_gpu_context_);
-      GPU_context_active_set(blender_gpu_context_);
-      GPU_context_begin_frame(blender_gpu_context_);
-    }'''
-
-    t_dis = '''    GPU_context_end_frame(blender_gpu_context_);
-
-    if (BLI_thread_is_main() && restore) {
-      wm_window_reset_drawable();
-    }
-    else {
-      WM_system_gpu_context_release(system_gpu_context_);
-      GPU_context_active_set(nullptr);
-    }'''
-    rep_dis = '''    if (system_gpu_context_ != nullptr) {
-      GPU_context_end_frame(blender_gpu_context_);
-
-      if (BLI_thread_is_main() && restore) {
-        wm_window_reset_drawable();
-      }
-      else {
-        WM_system_gpu_context_release(system_gpu_context_);
-        GPU_context_active_set(nullptr);
-      }
-    }'''
-
-    if t_ctor in c:
-        c = c.replace(t_ctor, rep_ctor)
-        print('Guarded ContextShared ctor')
-    if t_dtor in c:
-        c = c.replace(t_dtor, rep_dtor)
-        print('Guarded ContextShared dtor')
-    if t_en in c:
-        c = c.replace(t_en, rep_en)
-        print('Guarded ContextShared enable')
-    if t_dis in c:
-        c = c.replace(t_dis, rep_dis)
-        print('Guarded ContextShared disable')
-
-    with open(p, 'w') as f:
-        f.write(c)
-PYEOF
-fi
 
 # Guard wm_operators.cc, wm_gizmo.cc, view3d_gizmo_navigate.cc, appdir.cc and bpy_interface.cc
 python3 - << 'PYEOF'
