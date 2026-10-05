@@ -844,6 +844,171 @@ if os.path.exists(p):
 PYEOF
 fi
 
+# Guard wm_operators.cc, wm_gizmo.cc, view3d_gizmo_navigate.cc, appdir.cc and bpy_interface.cc
+python3 - << 'PYEOF'
+import os
+
+blender_src = os.environ.get('BLENDER_SRC', '')
+
+# 1. Patch wm_operators.cc: guard WM_operator_properties_create_ptr against nullptr / missing srna
+p_wmop = blender_src + '/source/blender/windowmanager/intern/wm_operators.cc'
+if os.path.exists(p_wmop):
+    with open(p_wmop, 'r') as f:
+        c = f.read()
+    t_wmop = '''PointerRNA WM_operator_properties_create_ptr(wmOperatorType *ot)
+{
+  /* Set the ID so the context can be accessed: see #STRUCT_NO_CONTEXT_WITHOUT_OWNER_ID. */
+  return RNA_pointer_create_discrete(static_cast<ID *>(G_MAIN->wm.first), ot->srna, nullptr);
+}'''
+    rep_wmop = '''PointerRNA WM_operator_properties_create_ptr(wmOperatorType *ot)
+{
+  ID *wm_id = (G_MAIN && G_MAIN->wm.first) ? static_cast<ID *>(G_MAIN->wm.first) : nullptr;
+  if (ot == nullptr || ot->srna == nullptr) {
+    return RNA_pointer_create_discrete(wm_id, RNA_OperatorProperties, nullptr);
+  }
+  /* Set the ID so the context can be accessed: see #STRUCT_NO_CONTEXT_WITHOUT_OWNER_ID. */
+  return RNA_pointer_create_discrete(wm_id, ot->srna, nullptr);
+}'''
+    if t_wmop in c:
+        c = c.replace(t_wmop, rep_wmop)
+        with open(p_wmop, 'w') as f:
+            f.write(c)
+        print('Successfully patched wm_operators.cc')
+
+# 2. Patch wm_gizmo.cc: guard WM_gizmo_operator_set against nullptr ot
+p_wmgz = blender_src + '/source/blender/windowmanager/gizmo/intern/wm_gizmo.cc'
+if os.path.exists(p_wmgz):
+    with open(p_wmgz, 'r') as f:
+        c = f.read()
+    t_wmgz = '''  if (gzop.ptr.data) {
+    WM_operator_properties_free(&gzop.ptr);
+  }
+  gzop.ptr = WM_operator_properties_create_ptr(ot);'''
+    rep_wmgz = '''  if (gzop.ptr.data) {
+    WM_operator_properties_free(&gzop.ptr);
+  }
+  if (ot != nullptr) {
+    gzop.ptr = WM_operator_properties_create_ptr(ot);
+  }
+  else {
+    gzop.ptr = PointerRNA_NULL;
+  }'''
+    if t_wmgz in c:
+        c = c.replace(t_wmgz, rep_wmgz)
+        with open(p_wmgz, 'w') as f:
+            f.write(c)
+        print('Successfully patched wm_gizmo.cc')
+
+# 3. Patch view3d_gizmo_navigate.cc: make operator null checks unconditional
+p_gznav = blender_src + '/source/blender/editors/space_view3d/view3d_gizmo_navigate.cc'
+if os.path.exists(p_gznav):
+    with open(p_gznav, 'r') as f:
+        c = f.read()
+    t_nav1 = '''    wmOperatorType *ot = WM_operatortype_find(info->opname, true);
+#ifndef WITH_PYTHON
+    if (ot != nullptr)
+#endif
+    {
+      PointerRNA *ptr = WM_gizmo_operator_set(gz, 0, ot, nullptr);
+      if (info->op_prop_fn != nullptr) {
+        info->op_prop_fn(ptr);
+      }
+    }'''
+    rep_nav1 = '''    wmOperatorType *ot = WM_operatortype_find(info->opname, true);
+    if (ot != nullptr) {
+      PointerRNA *ptr = WM_gizmo_operator_set(gz, 0, ot, nullptr);
+      if (ptr != nullptr && ptr->data != nullptr && info->op_prop_fn != nullptr) {
+        info->op_prop_fn(ptr);
+      }
+    }'''
+    if t_nav1 in c:
+        c = c.replace(t_nav1, rep_nav1)
+
+    t_cam = '''  {
+    wmGizmo *gz = navgroup->gz_array[GZ_INDEX_CAMERA_OFF];
+    WM_gizmo_operator_set(gz, 0, ot_view_camera, nullptr);
+  }
+  {
+    wmGizmo *gz = navgroup->gz_array[GZ_INDEX_CAMERA_ON];
+    WM_gizmo_operator_set(gz, 0, ot_view_camera, nullptr);
+  }'''
+    rep_cam = '''  {
+    wmGizmo *gz = navgroup->gz_array[GZ_INDEX_CAMERA_OFF];
+    if (ot_view_camera != nullptr) {
+      WM_gizmo_operator_set(gz, 0, ot_view_camera, nullptr);
+    }
+  }
+  {
+    wmGizmo *gz = navgroup->gz_array[GZ_INDEX_CAMERA_ON];
+    if (ot_view_camera != nullptr) {
+      WM_gizmo_operator_set(gz, 0, ot_view_camera, nullptr);
+    }
+  }'''
+    if t_cam in c:
+        c = c.replace(t_cam, rep_cam)
+
+    t_axis = '''    for (int part_index = 0; part_index < 6; part_index += 1) {
+      PointerRNA *ptr = WM_gizmo_operator_set(gz, part_index + 1, ot_view_axis, nullptr);
+      RNA_enum_set(ptr, "type", mapping[part_index]);
+    }'''
+    rep_axis = '''    for (int part_index = 0; part_index < 6; part_index += 1) {
+      if (ot_view_axis != nullptr) {
+        PointerRNA *ptr = WM_gizmo_operator_set(gz, part_index + 1, ot_view_axis, nullptr);
+        if (ptr != nullptr && ptr->data != nullptr) {
+          RNA_enum_set(ptr, "type", mapping[part_index]);
+        }
+      }
+    }'''
+    if t_axis in c:
+        c = c.replace(t_axis, rep_axis)
+
+    with open(p_gznav, 'w') as f:
+        f.write(c)
+    print('Successfully patched view3d_gizmo_navigate.cc')
+
+# 4. Patch appdir.cc: support BLENDER_SYSTEM_SCRIPTS environment variable
+p_appdir = blender_src + '/source/blender/blenkernel/intern/appdir.cc'
+if os.path.exists(p_appdir):
+    with open(p_appdir, 'r') as f:
+        c = f.read()
+    t_appdir = '''    case BLENDER_SYSTEM_SCRIPTS:
+      if (get_path_system(path, path_maxncpy, "scripts", subfolder)) {
+        break;
+      }'''
+    rep_appdir = '''    case BLENDER_SYSTEM_SCRIPTS:
+      if (get_path_environment(path, path_maxncpy, subfolder, "BLENDER_SYSTEM_SCRIPTS")) {
+        break;
+      }
+      if (get_path_system(path, path_maxncpy, "scripts", subfolder)) {
+        break;
+      }'''
+    if t_appdir in c:
+        c = c.replace(t_appdir, rep_appdir)
+        with open(p_appdir, 'w') as f:
+            f.write(c)
+        print('Successfully patched appdir.cc')
+
+# 5. Patch bpy_interface.cc: enable Python system environment variables on Android
+p_bpy = blender_src + '/source/blender/python/intern/bpy_interface.cc'
+if os.path.exists(p_bpy):
+    with open(p_bpy, 'r') as f:
+        c = f.read()
+    t_bpy = '''static bool py_use_system_env = false;
+static bool py_use_user_env = false;'''
+    rep_bpy = '''#ifdef __ANDROID__
+static bool py_use_system_env = true;
+static bool py_use_user_env = true;
+#else
+static bool py_use_system_env = false;
+static bool py_use_user_env = false;
+#endif'''
+    if t_bpy in c:
+        c = c.replace(t_bpy, rep_bpy)
+        with open(p_bpy, 'w') as f:
+            f.write(c)
+        print('Successfully patched bpy_interface.cc')
+PYEOF
+
 # Add ANativeActivity entry point and Vulkan NDK compatibility stubs to creator.cc
 if [ -f "${BLENDER_SRC}/source/creator/creator.cc" ]; then
     # Rename main to blender_main_impl and provide extern "C" SDL_main for SDLActivity
@@ -901,12 +1066,15 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char *a
     char env_buf[1024];
     snprintf(env_buf, sizeof(env_buf), "%s/datafiles", files_dir);
     setenv("BLENDER_SYSTEM_DATAFILES", env_buf, 1);
+    setenv("BLENDER_USER_DATAFILES", env_buf, 1);
     snprintf(env_buf, sizeof(env_buf), "%s/scripts", files_dir);
     setenv("BLENDER_SYSTEM_SCRIPTS", env_buf, 1);
+    setenv("BLENDER_USER_SCRIPTS", env_buf, 1);
     snprintf(env_buf, sizeof(env_buf), "%s/config/blender/5.2", files_dir);
     setenv("BLENDER_USER_CONFIG", env_buf, 1);
     setenv("BLENDER_SYSTEM_RESOURCES", files_dir, 1);
     snprintf(env_buf, sizeof(env_buf), "%s/python", files_dir);
+    setenv("BLENDER_SYSTEM_PYTHON", env_buf, 1);
     setenv("PYTHONHOME", env_buf, 1);
     snprintf(env_buf, sizeof(env_buf), "%s/python/lib/python3.13:%s/scripts/modules", files_dir, files_dir);
     setenv("PYTHONPATH", env_buf, 1);
