@@ -413,6 +413,203 @@ if os.path.exists(p):
 PYEOF
 fi
 
+
+# Ensure GHOST_ContextVK does not reject Android GPUs lacking geometryShader or dualSrcBlend
+if [ -f "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc" ]; then
+    python3 - << 'PYEOF'
+import os
+p = os.environ.get('BLENDER_SRC', '') + '/intern/ghost/intern/GHOST_ContextVK.cc'
+if os.path.exists(p):
+    with open(p, 'r') as f:
+        c = f.read()
+
+    t1 = '''#ifndef __APPLE__
+          !device_vk.features.features.geometryShader ||
+#endif
+          !device_vk.features.features.fragmentStoresAndAtomics ||
+          !device_vk.features.features.imageCubeArray ||
+          !device_vk.features.features.dualSrcBlend || !device_vk.features.features.imageCubeArray'''
+
+    rep1 = '''#if !defined(__APPLE__) && !defined(__ANDROID__)
+          !device_vk.features.features.geometryShader ||
+          !device_vk.features.features.dualSrcBlend ||
+#endif
+          !device_vk.features.features.fragmentStoresAndAtomics ||
+          !device_vk.features.features.imageCubeArray'''
+
+    t2 = '''#ifndef __APPLE__
+    device_features.geometryShader = VK_TRUE;
+#endif'''
+
+    rep2 = '''#if !defined(__APPLE__) && !defined(__ANDROID__)
+    device_features.geometryShader = VK_TRUE;
+#else
+    device_features.geometryShader = device.features.features.geometryShader;
+#endif'''
+
+    if t1 in c:
+        c = c.replace(t1, rep1)
+        print('Patched GHOST_ContextVK select_physical_device for Android')
+    if t2 in c:
+        c = c.replace(t2, rep2)
+        print('Patched GHOST_ContextVK geometryShader feature flag for Android')
+
+    with open(p, 'w') as f:
+        f.write(c)
+PYEOF
+fi
+
+# Guard WM_system_gpu_context functions against nullptr in wm_window.cc
+if [ -f "${BLENDER_SRC}/source/blender/windowmanager/intern/wm_window.cc" ]; then
+    python3 - << 'PYEOF'
+import os
+p = os.environ.get('BLENDER_SRC', '') + '/source/blender/windowmanager/intern/wm_window.cc'
+if os.path.exists(p):
+    with open(p, 'r') as f:
+        c = f.read()
+
+    t_disp = '''void WM_system_gpu_context_dispose(GHOST_IContext *context)
+{
+  BLI_assert(GPU_framebuffer_active_get() == GPU_framebuffer_back_get());
+  g_system->disposeContext(context);
+}'''
+    rep_disp = '''void WM_system_gpu_context_dispose(GHOST_IContext *context)
+{
+  if (!context) return;
+  BLI_assert(GPU_framebuffer_active_get() == GPU_framebuffer_back_get());
+  if (g_system) {
+    g_system->disposeContext(context);
+  }
+}'''
+
+    t_act = '''void WM_system_gpu_context_activate(GHOST_IContext *context)
+{
+  BLI_assert(GPU_framebuffer_active_get() == GPU_framebuffer_back_get());
+  context->activateDrawingContext();
+}'''
+    rep_act = '''void WM_system_gpu_context_activate(GHOST_IContext *context)
+{
+  if (!context) return;
+  BLI_assert(GPU_framebuffer_active_get() == GPU_framebuffer_back_get());
+  context->activateDrawingContext();
+}'''
+
+    t_rel = '''void WM_system_gpu_context_release(GHOST_IContext *context)
+{
+  BLI_assert(GPU_framebuffer_active_get() == GPU_framebuffer_back_get());
+  context->releaseDrawingContext();
+}'''
+    rep_rel = '''void WM_system_gpu_context_release(GHOST_IContext *context)
+{
+  if (!context) return;
+  BLI_assert(GPU_framebuffer_active_get() == GPU_framebuffer_back_get());
+  context->releaseDrawingContext();
+}'''
+
+    if t_disp in c:
+        c = c.replace(t_disp, rep_disp)
+        print('Guarded WM_system_gpu_context_dispose')
+    if t_act in c:
+        c = c.replace(t_act, rep_act)
+        print('Guarded WM_system_gpu_context_activate')
+    if t_rel in c:
+        c = c.replace(t_rel, rep_rel)
+        print('Guarded WM_system_gpu_context_release')
+
+    with open(p, 'w') as f:
+        f.write(c)
+PYEOF
+fi
+
+# Guard ContextShared in draw_gpu_context.cc against nullptr offscreen context
+if [ -f "${BLENDER_SRC}/source/blender/draw/intern/draw_gpu_context.cc" ]; then
+    python3 - << 'PYEOF'
+import os
+p = os.environ.get('BLENDER_SRC', '') + '/source/blender/draw/intern/draw_gpu_context.cc'
+if os.path.exists(p):
+    with open(p, 'r') as f:
+        c = f.read()
+
+    t_ctor = '''    system_gpu_context_ = WM_system_gpu_context_create();
+    WM_system_gpu_context_activate(system_gpu_context_);
+    blender_gpu_context_ = GPU_context_create(nullptr, system_gpu_context_);'''
+    rep_ctor = '''    system_gpu_context_ = WM_system_gpu_context_create();
+    if (system_gpu_context_ != nullptr) {
+      WM_system_gpu_context_activate(system_gpu_context_);
+      blender_gpu_context_ = GPU_context_create(nullptr, system_gpu_context_);
+    }'''
+
+    t_dtor = '''  ~ContextShared()
+  {
+    WM_system_gpu_context_activate(system_gpu_context_);
+    GPU_context_active_set(blender_gpu_context_);
+
+    GPU_context_discard(blender_gpu_context_);
+    WM_system_gpu_context_dispose(system_gpu_context_);
+
+    BLI_ticket_mutex_free(mutex_);
+  }'''
+    rep_dtor = '''  ~ContextShared()
+  {
+    if (system_gpu_context_ != nullptr) {
+      WM_system_gpu_context_activate(system_gpu_context_);
+      GPU_context_active_set(blender_gpu_context_);
+
+      GPU_context_discard(blender_gpu_context_);
+      WM_system_gpu_context_dispose(system_gpu_context_);
+    }
+
+    BLI_ticket_mutex_free(mutex_);
+  }'''
+
+    t_en = '''    WM_system_gpu_context_activate(system_gpu_context_);
+    GPU_context_active_set(blender_gpu_context_);
+    GPU_context_begin_frame(blender_gpu_context_);'''
+    rep_en = '''    if (system_gpu_context_ != nullptr) {
+      WM_system_gpu_context_activate(system_gpu_context_);
+      GPU_context_active_set(blender_gpu_context_);
+      GPU_context_begin_frame(blender_gpu_context_);
+    }'''
+
+    t_dis = '''    GPU_context_end_frame(blender_gpu_context_);
+
+    if (BLI_thread_is_main() && restore) {
+      wm_window_reset_drawable();
+    }
+    else {
+      WM_system_gpu_context_release(system_gpu_context_);
+      GPU_context_active_set(nullptr);
+    }'''
+    rep_dis = '''    if (system_gpu_context_ != nullptr) {
+      GPU_context_end_frame(blender_gpu_context_);
+
+      if (BLI_thread_is_main() && restore) {
+        wm_window_reset_drawable();
+      }
+      else {
+        WM_system_gpu_context_release(system_gpu_context_);
+        GPU_context_active_set(nullptr);
+      }
+    }'''
+
+    if t_ctor in c:
+        c = c.replace(t_ctor, rep_ctor)
+        print('Guarded ContextShared ctor')
+    if t_dtor in c:
+        c = c.replace(t_dtor, rep_dtor)
+        print('Guarded ContextShared dtor')
+    if t_en in c:
+        c = c.replace(t_en, rep_en)
+        print('Guarded ContextShared enable')
+    if t_dis in c:
+        c = c.replace(t_dis, rep_dis)
+        print('Guarded ContextShared disable')
+
+    with open(p, 'w') as f:
+        f.write(c)
+PYEOF
+fi
+
 # Add ANativeActivity entry point and Vulkan NDK compatibility stubs to creator.cc
 if [ -f "${BLENDER_SRC}/source/creator/creator.cc" ]; then
     # Rename main to blender_main_impl and provide extern "C" SDL_main for SDLActivity
