@@ -1116,13 +1116,11 @@ static bool py_use_user_env = false;
             f.write(c)
         print('Successfully patched bpy_interface.cc')
 
-# 6. Patch mallocn_lockfree_impl.cc: 16-byte alignment and bulletproof memory canary checks
+# 6. Patch mallocn_lockfree_impl.cc: ensure 16-byte alignment for MemHead and MemHeadAligned
 p_mlf = blender_src + '/intern/guardedalloc/intern/mallocn_lockfree_impl.cc'
 if os.path.exists(p_mlf):
     with open(p_mlf, 'r') as f:
         c = f.read()
-
-    # 16-byte aligned MemHead and MemHeadAligned with magic canaries
     t_mlf = '''typedef struct MemHead {
   /* Length of allocated memory block. */
   size_t len;
@@ -1136,120 +1134,26 @@ typedef struct MemHeadAligned {
 } MemHeadAligned;
 static_assert(MEM_MIN_CPP_ALIGNMENT <= alignof(MemHeadAligned), "Bad alignment of MemHeadAligned");
 static_assert(MEM_MIN_CPP_ALIGNMENT <= sizeof(MemHeadAligned), "Bad size of MemHeadAligned");'''
-
-    rep_mlf = '''#define MEM_MAGIC 0x424C454E /* 'BLEN' */
-#define MEM_FREED 0xDEADBEEF
-
-typedef struct alignas(16) MemHead {
-  uint32_t magic;
-  uint32_t pad;
+    rep_mlf = '''typedef struct alignas(16) MemHead {
+  /* Length of allocated memory block. */
+  size_t pad;
   size_t len;
 } MemHead;
 static_assert(MEM_MIN_CPP_ALIGNMENT <= alignof(MemHead), "Bad alignment of MemHead");
 static_assert(MEM_MIN_CPP_ALIGNMENT <= sizeof(MemHead), "Bad size of MemHead");
-static_assert(sizeof(MemHead) == 16, "Bad size of MemHead");
 
 typedef struct alignas(16) MemHeadAligned {
-  uint32_t magic;
   short alignment;
-  char pad[2];
+  char pad[6];
   size_t len;
 } MemHeadAligned;
 static_assert(MEM_MIN_CPP_ALIGNMENT <= alignof(MemHeadAligned), "Bad alignment of MemHeadAligned");
-static_assert(MEM_MIN_CPP_ALIGNMENT <= sizeof(MemHeadAligned), "Bad size of MemHeadAligned");
-static_assert(sizeof(MemHeadAligned) == 16, "Bad size of MemHeadAligned");'''
-
+static_assert(MEM_MIN_CPP_ALIGNMENT <= sizeof(MemHeadAligned), "Bad size of MemHeadAligned");'''
     if t_mlf in c:
         c = c.replace(t_mlf, rep_mlf)
-
-    # malloc
-    t_mal = '''  memh = (MemHead *)malloc(len + sizeof(MemHead));
-  PRF_memory_alloc(memh, len + sizeof(MemHead));
-
-  if (memh) [[likely]] {'''
-    rep_mal = '''  memh = (MemHead *)malloc(len + sizeof(MemHead));
-  PRF_memory_alloc(memh, len + sizeof(MemHead));
-
-  if (memh) [[likely]] {
-    memh->magic = MEM_MAGIC;
-    memh->pad = 0;'''
-    if t_mal in c:
-        c = c.replace(t_mal, rep_mal)
-
-    # calloc
-    t_cal = '''  memh = (MemHead *)calloc(1, len + sizeof(MemHead));
-  PRF_memory_alloc(memh, len + sizeof(MemHead));
-
-  if (memh) [[likely]] {'''
-    rep_cal = '''  memh = (MemHead *)calloc(1, len + sizeof(MemHead));
-  PRF_memory_alloc(memh, len + sizeof(MemHead));
-
-  if (memh) [[likely]] {
-    memh->magic = MEM_MAGIC;
-    memh->pad = 0;'''
-    if t_cal in c:
-        c = c.replace(t_cal, rep_cal)
-
-    # aligned
-    t_alg = '''    memh->len = len | size_t(MEMHEAD_FLAG_ALIGN) |
-                size_t(destructor_type == DestructorType::NonTrivial ?
-                           MEMHEAD_FLAG_NONTRIVIAL_DESTRUCTOR :
-                           0);
-    memh->alignment = short(alignment);'''
-    rep_alg = '''    memh->magic = MEM_MAGIC;
-    memh->alignment = short(alignment);
-    memh->pad[0] = 0;
-    memh->pad[1] = 0;
-    memh->len = len | size_t(MEMHEAD_FLAG_ALIGN) |
-                size_t(destructor_type == DestructorType::NonTrivial ?
-                           MEMHEAD_FLAG_NONTRIVIAL_DESTRUCTOR :
-                           0);'''
-    if t_alg in c:
-        c = c.replace(t_alg, rep_alg)
-
-    # free: protect against double free and non-MEM pointer corruption
-    t_fre = '''  MemHead *memh = MEMHEAD_FROM_PTR(vmemh);
-  size_t len = MEMHEAD_LEN(memh);'''
-    rep_fre = '''  MemHead *memh = MEMHEAD_FROM_PTR(vmemh);
-#ifdef __ANDROID__
-  if (memh->magic == MEM_FREED) [[unlikely]] {
-    fprintf(stderr, "BlenderMEM: DOUBLE FREE PREVENTED for %p\\n", vmemh);
-    return;
-  }
-  if (memh->magic != MEM_MAGIC) [[unlikely]] {
-    fprintf(stderr, "BlenderMEM: NON-MEM FREE PREVENTED for %p (magic=0x%08x != 0x%08x), passing to libc free()\\n", vmemh, memh->magic, MEM_MAGIC);
-    free(vmemh);
-    return;
-  }
-  memh->magic = MEM_FREED;
-#endif
-  size_t len = MEMHEAD_LEN(memh);'''
-    if t_fre in c:
-        c = c.replace(t_fre, rep_fre)
-
-    # alloc_len safe check
-    t_len = '''size_t MEM_lockfree_allocN_len(const void *vmemh)
-{
-  if (vmemh) [[likely]] {
-    return MEMHEAD_LEN(MEMHEAD_FROM_PTR(vmemh));
-  }'''
-    rep_len = '''size_t MEM_lockfree_allocN_len(const void *vmemh)
-{
-  if (vmemh) [[likely]] {
-    const MemHead *memh = MEMHEAD_FROM_PTR(vmemh);
-#ifdef __ANDROID__
-    if (memh->magic != MEM_MAGIC && memh->magic != MEM_FREED) {
-      return 0;
-    }
-#endif
-    return MEMHEAD_LEN(memh);
-  }'''
-    if t_len in c:
-        c = c.replace(t_len, rep_len)
-
-    with open(p_mlf, 'w') as f:
-        f.write(c)
-    print('Successfully patched mallocn_lockfree_impl.cc with canary tags and alignment')
+        with open(p_mlf, 'w') as f:
+            f.write(c)
+        print('Successfully patched mallocn_lockfree_impl.cc for 16-byte alignment')
 
 # 7. Patch mallocn_intern.hh: set ALIGNED_MALLOC_MINIMUM_ALIGNMENT to 16
 p_mintern = blender_src + '/intern/guardedalloc/intern/mallocn_intern.hh'
