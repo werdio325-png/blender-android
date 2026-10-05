@@ -2454,7 +2454,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     private void extractAssetsIfNeeded() {
         try {
             File filesDir = getFilesDir();
-            File marker = new File(filesDir, ".assets_extracted_v1");
+            File marker = new File(filesDir, ".assets_extracted_v2");
             if (marker.exists()) {
                 Log.i(TAG, "Blender assets already extracted.");
                 return;
@@ -2504,6 +2504,15 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                     Log.w(TAG, "Symlink scripts failed: " + e.getMessage());
                 }
             }
+            File pythonSrc = new File(filesDir, "python");
+            File pythonDst = new File(verDir, "python");
+            if (!pythonDst.exists() && pythonSrc.exists()) {
+                try {
+                    android.system.Os.symlink(pythonSrc.getAbsolutePath(), pythonDst.getAbsolutePath());
+                } catch (Exception e) {
+                    Log.w(TAG, "Symlink python failed: " + e.getMessage());
+                }
+            }
             marker.createNewFile();
             Log.i(TAG, "Blender assets extracted successfully.");
         } catch (Exception e) {
@@ -2520,6 +2529,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             android.system.Os.setenv("BLENDER_USER_CONFIG", filesDir + "/config/blender/5.2", true);
             android.system.Os.setenv("BLENDER_SYSTEM_DATAFILES", filesDir + "/datafiles", true);
             android.system.Os.setenv("BLENDER_SYSTEM_SCRIPTS", filesDir + "/scripts", true);
+            android.system.Os.setenv("BLENDER_USER_SCRIPTS", filesDir + "/scripts", true);
+            android.system.Os.setenv("BLENDER_SYSTEM_PYTHON", filesDir + "/python", true);
+            android.system.Os.setenv("BLENDER_USER_DATAFILES", filesDir + "/datafiles", true);
             android.system.Os.setenv("BLENDER_SYSTEM_RESOURCES", filesDir, true);
             android.system.Os.setenv("PYTHONHOME", filesDir + "/python", true);
             android.system.Os.setenv("PYTHONPATH", filesDir + "/python/lib/python3.13:" + filesDir + "/scripts/modules", true);
