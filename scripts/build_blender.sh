@@ -818,11 +818,15 @@ if os.path.exists(p_vk):
         c = c.replace(t_rel, rep_rel)
         print('Patched swapBufferRelease present handling')
 
-    with open(p_vk, 'w') as f:
-        f.write(c)
-    print('Successfully patched GHOST_ContextVK.cc')
-
     # Disable swapchain_maintenance_1 on Android to use stable WSI
+    t_opt_maint = '        optional_device_extensions.append(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME);'
+    rep_opt_maint = '''#ifndef __ANDROID__
+        optional_device_extensions.append(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME);
+#endif'''
+    if t_opt_maint in c:
+        c = c.replace(t_opt_maint, rep_opt_maint)
+        print('Patched optional_device_extensions for SWAPCHAIN_MAINTENANCE_1')
+
     t_maint = '''    if (device.extensions.is_enabled(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME)) {
       feature_struct_ptr.push_back(&swapchain_maintenance_1);
       device.use_vk_ext_swapchain_maintenance_1 = true;
@@ -850,6 +854,10 @@ if os.path.exists(p_vk):
     if t_acq_ent in c:
         c = c.replace(t_acq_ent, rep_acq_ent)
         print('Patched swapBufferAcquire entrance log')
+
+    with open(p_vk, 'w') as f:
+        f.write(c)
+    print('Successfully patched GHOST_ContextVK.cc')
 
 # 3. Update GHOST_SystemSDL.cc for offscreen Vulkan context (Headless)
 p_sys = blender_src + '/intern/ghost/intern/GHOST_SystemSDL.cc'
