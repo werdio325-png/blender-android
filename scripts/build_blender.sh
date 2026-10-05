@@ -1314,10 +1314,10 @@ if os.path.exists(p_icons):
     with open(p_icons, "r") as f:
         c = f.read()
     t_icon = "std::unique_ptr<uchar> data_wrapper(std::move(data));"
-    rep_icon = "std::unique_ptr<uchar, void (*)(void *)> data_wrapper(data, MEM_freeN);"
+    rep_icon = "std::unique_ptr<uchar, void (*)(void *)> data_wrapper(data, MEM_delete_void);"
     if t_icon in c:
         c = c.replace(t_icon, rep_icon)
-        c = c.replace("if (data_len <= 8) {\n    return nullptr;\n  }", "if (data == nullptr) { return nullptr; }\n  if (data_len <= 8) {\n    MEM_freeN(data);\n    return nullptr;\n  }")
+        c = c.replace("if (data_len <= 8) {\n    return nullptr;\n  }", "if (data == nullptr) { return nullptr; }\n  if (data_len <= 8) {\n    MEM_delete_void(data);\n    return nullptr;\n  }")
         with open(p_icons, "w") as f:
             f.write(c)
         print("Successfully patched icons.cc BKE_icon_geom_from_memory")
