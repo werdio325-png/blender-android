@@ -326,28 +326,33 @@ fi
 
 # Ensure Android Vulkan swapchain supports both COLOR_ATTACHMENT and TRANSFER_DST
 if [ -f "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc" ]; then
-    python3 -c "
-p = '${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc'
-with open(p, 'r') as f:
-    c = f.read()
-target = 'create_info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |'
-repl = '''VkImageUsageFlags desired_usage = (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    python3 - << 'PYEOF'
+import os
+p = os.environ.get('BLENDER_SRC', '') + '/intern/ghost/intern/GHOST_ContextVK.cc'
+if os.path.exists(p):
+    with open(p, 'r') as f:
+        c = f.read()
+    target = 'create_info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |'
+    repl = '''VkImageUsageFlags desired_usage = (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
   create_info.imageUsage = desired_usage |'''
-if target in c:
-    c = c.replace(target, repl)
-with open(p, 'w') as f:
-    f.write(c)
-"
+    if target in c:
+        c = c.replace(target, repl)
+        with open(p, 'w') as f:
+            f.write(c)
+        print('Patched GHOST_ContextVK.cc swapchain imageUsage successfully.')
+PYEOF
 fi
 
 # Ensure window is kept alive on Android and bypass fatal platform check exit
 if [ -f "${BLENDER_SRC}/source/blender/windowmanager/intern/wm_init_exit.cc" ]; then
-    python3 -c "
-p = '${BLENDER_SRC}/source/blender/windowmanager/intern/wm_init_exit.cc'
-with open(p, 'r') as f:
-    c = f.read()
+    python3 - << 'PYEOF'
+import os
+p = os.environ.get('BLENDER_SRC', '') + '/source/blender/windowmanager/intern/wm_init_exit.cc'
+if os.path.exists(p):
+    with open(p, 'r') as f:
+        c = f.read()
 
-target1 = '''    if (wm != nullptr) {
+    target1 = '''    if (wm != nullptr) {
       wm_window_ghostwindows_remove_invalid(C, wm);
     }
     if (wm == nullptr || wm->windows.is_empty()) {
@@ -358,7 +363,7 @@ target1 = '''    if (wm != nullptr) {
       WM_exit(C, EXIT_FAILURE);
     }'''
 
-repl1 = '''#ifndef __ANDROID__
+    repl1 = '''#ifndef __ANDROID__
     if (wm != nullptr) {
       wm_window_ghostwindows_remove_invalid(C, wm);
     }
@@ -370,9 +375,7 @@ repl1 = '''#ifndef __ANDROID__
       WM_exit(C, EXIT_FAILURE);
     }
 #else
-    printf(\"BlenderNative: ensuring windows on Android...\\n\");
     if (wm == nullptr || wm->windows.is_empty()) {
-      printf(\"BlenderNative: creating fallback default window...\\n\");
       wm_add_default(CTX_data_main(C), C);
       wm = CTX_wm_manager(C);
     }
@@ -381,11 +384,11 @@ repl1 = '''#ifndef __ANDROID__
     }
 #endif'''
 
-target2 = '''    if (!WM_platform_support_perform_checks()) {
+    target2 = '''    if (!WM_platform_support_perform_checks()) {
       WM_exit(C, -1);
     }'''
 
-repl2 = '''#ifndef __ANDROID__
+    repl2 = '''#ifndef __ANDROID__
     if (!WM_platform_support_perform_checks()) {
       WM_exit(C, -1);
     }
@@ -393,21 +396,21 @@ repl2 = '''#ifndef __ANDROID__
     WM_platform_support_perform_checks();
 #endif'''
 
-if target1 in c:
-    c = c.replace(target1, repl1)
-    print('Patched target1 in wm_init_exit.cc')
-else:
-    print('WARNING: target1 not found in wm_init_exit.cc')
+    if target1 in c:
+        c = c.replace(target1, repl1)
+        print('Patched target1 in wm_init_exit.cc')
+    else:
+        print('ERROR: target1 not found in wm_init_exit.cc')
 
-if target2 in c:
-    c = c.replace(target2, repl2)
-    print('Patched target2 in wm_init_exit.cc')
-else:
-    print('WARNING: target2 not found in wm_init_exit.cc')
+    if target2 in c:
+        c = c.replace(target2, repl2)
+        print('Patched target2 in wm_init_exit.cc')
+    else:
+        print('ERROR: target2 not found in wm_init_exit.cc')
 
-with open(p, 'w') as f:
-    f.write(c)
-"
+    with open(p, 'w') as f:
+        f.write(c)
+PYEOF
 fi
 
 # Add ANativeActivity entry point and Vulkan NDK compatibility stubs to creator.cc
