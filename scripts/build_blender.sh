@@ -295,13 +295,7 @@ if [ -f "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_backend.cc" ]; then
     sed -i 's/Vector<StringRefNull> missing_capabilities;/#ifdef __ANDROID__\n  return {};\n#endif\n  Vector<StringRefNull> missing_capabilities;/' "${BLENDER_SRC}/source/blender/gpu/vulkan/vk_backend.cc"
 fi
 
-# Relax desktop-only mandatory features in GHOST_ContextVK.cc for Android GPUs
-if [ -f "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc" ]; then
-    sed -i 's/device_features.dualSrcBlend = VK_TRUE;/device_features.dualSrcBlend = device.features.features.dualSrcBlend;/' "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc"
-    sed -i 's/device_features.drawIndirectFirstInstance = VK_TRUE;/device_features.drawIndirectFirstInstance = device.features.features.drawIndirectFirstInstance;/' "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc"
-    sed -i 's/device_features.imageCubeArray = VK_TRUE;/device_features.imageCubeArray = device.features.features.imageCubeArray;/' "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc"
-    sed -i 's/device_features.fragmentStoresAndAtomics = VK_TRUE;/device_features.fragmentStoresAndAtomics = device.features.features.fragmentStoresAndAtomics;/' "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc"
-fi
+# (GHOST_ContextVK device features relaxed in unified patch below)
 
 # Guard GPU_storagebuf functions against nullptr ssbo safely
 if [ -f "${BLENDER_SRC}/source/blender/gpu/intern/gpu_storage_buffer.cc" ]; then
@@ -324,24 +318,7 @@ fi
 
 
 
-# Ensure Android Vulkan swapchain supports both COLOR_ATTACHMENT and TRANSFER_DST
-if [ -f "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc" ]; then
-    python3 - << 'PYEOF'
-import os
-p = os.environ.get('BLENDER_SRC', '') + '/intern/ghost/intern/GHOST_ContextVK.cc'
-if os.path.exists(p):
-    with open(p, 'r') as f:
-        c = f.read()
-    target = 'create_info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |'
-    repl = '''VkImageUsageFlags desired_usage = (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-  create_info.imageUsage = desired_usage |'''
-    if target in c:
-        c = c.replace(target, repl)
-        with open(p, 'w') as f:
-            f.write(c)
-        print('Patched GHOST_ContextVK.cc swapchain imageUsage successfully.')
-PYEOF
-fi
+# (Swapchain imageUsage handled in unified patch below)
 
 # Ensure window is kept alive on Android and bypass fatal platform check exit
 if [ -f "${BLENDER_SRC}/source/blender/windowmanager/intern/wm_init_exit.cc" ]; then
@@ -414,197 +391,128 @@ PYEOF
 fi
 
 
-# Ensure GHOST_ContextVK does not reject Android GPUs lacking geometryShader, multiViewport, etc.
-if [ -f "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc" ]; then
-    python3 - << 'PYEOF'
-import os
-p = os.environ.get('BLENDER_SRC', '') + '/intern/ghost/intern/GHOST_ContextVK.cc'
-if os.path.exists(p):
-    with open(p, 'r') as f:
-        c = f.read()
-
-    target1 = '''      if (
-#ifndef __APPLE__
-          !device_vk.features.features.geometryShader ||
-#endif
-          !device_vk.features.features.vertexPipelineStoresAndAtomics ||
-          !device_vk.features.features.multiViewport ||
-          !device_vk.features.features.shaderClipDistance ||
-          !device_vk.features.features.fragmentStoresAndAtomics ||
-          !device_vk.features.features.multiDrawIndirect ||
-          !device_vk.features.features.imageCubeArray ||
-          !device_vk.features.features.dualSrcBlend || !device_vk.features.features.logicOp ||
-          !device_vk.features.features.imageCubeArray)
-      {
-        continue;
-      }'''
-
-    repl1 = '''#ifndef __ANDROID__
-      if (
-#ifndef __APPLE__
-          !device_vk.features.features.geometryShader ||
-#endif
-          !device_vk.features.features.vertexPipelineStoresAndAtomics ||
-          !device_vk.features.features.multiViewport ||
-          !device_vk.features.features.shaderClipDistance ||
-          !device_vk.features.features.fragmentStoresAndAtomics ||
-          !device_vk.features.features.multiDrawIndirect ||
-          !device_vk.features.features.imageCubeArray ||
-          !device_vk.features.features.dualSrcBlend || !device_vk.features.features.logicOp ||
-          !device_vk.features.features.imageCubeArray)
-      {
-        continue;
-      }
-#else
-      if (!device_vk.features.features.fragmentStoresAndAtomics ||
-          !device_vk.features.features.imageCubeArray)
-      {
-        continue;
-      }
-#endif'''
-
-    target2 = '''    VkPhysicalDeviceFeatures device_features = {};
-#ifndef __APPLE__
-    device_features.geometryShader = VK_TRUE;
-#endif
-    device_features.vertexPipelineStoresAndAtomics = VK_TRUE;
-    device_features.multiViewport = VK_TRUE;
-    device_features.shaderClipDistance = VK_TRUE;
-    device_features.fragmentStoresAndAtomics = VK_TRUE;
-    device_features.logicOp = VK_TRUE;
-    device_features.dualSrcBlend = VK_TRUE;
-    device_features.imageCubeArray = VK_TRUE;
-    device_features.multiDrawIndirect = VK_TRUE;
-    device_features.drawIndirectFirstInstance = VK_TRUE;'''
-
-    repl2 = '''    VkPhysicalDeviceFeatures device_features = {};
-#ifndef __ANDROID__
-#ifndef __APPLE__
-    device_features.geometryShader = VK_TRUE;
-#endif
-    device_features.vertexPipelineStoresAndAtomics = VK_TRUE;
-    device_features.multiViewport = VK_TRUE;
-    device_features.shaderClipDistance = VK_TRUE;
-    device_features.fragmentStoresAndAtomics = VK_TRUE;
-    device_features.logicOp = VK_TRUE;
-    device_features.dualSrcBlend = VK_TRUE;
-    device_features.imageCubeArray = VK_TRUE;
-    device_features.multiDrawIndirect = VK_TRUE;
-    device_features.drawIndirectFirstInstance = VK_TRUE;
-#else
-    device_features = device.features.features;
-#endif'''
-
-    if target1 in c:
-        c = c.replace(target1, repl1)
-        print('Patched GHOST_ContextVK select_physical_device successfully')
-    else:
-        print('ERROR: target1 not found in GHOST_ContextVK.cc')
-
-    if target2 in c:
-        c = c.replace(target2, repl2)
-        print('Patched GHOST_ContextVK create_device successfully')
-    else:
-        print('ERROR: target2 not found in GHOST_ContextVK.cc')
-
-    with open(p, 'w') as f:
-        f.write(c)
-PYEOF
-fi
-
-# Add real on-screen SDL Vulkan swapchain support to GHOST_ContextVK and GHOST_WindowSDL
+# Patch GHOST_ContextVK.cc for Android Mali Vulkan compatibility
 python3 - << 'PYEOF'
 import os
 
 blender_src = os.environ.get('BLENDER_SRC', '')
-
-# 1. Update GHOST_ContextVK.hh to define GHOST_kVulkanPlatformSDL
-p_hh = blender_src + '/intern/ghost/intern/GHOST_ContextVK.hh'
-if os.path.exists(p_hh):
-    with open(p_hh, 'r') as f:
-        c = f.read()
-    t_enum = '''enum GHOST_TVulkanPlatformType {
-  GHOST_kVulkanPlatformHeadless = 0,'''
-    rep_enum = '''enum GHOST_TVulkanPlatformType {
-  GHOST_kVulkanPlatformHeadless = 0,
-  GHOST_kVulkanPlatformSDL = 3,'''
-    if t_enum in c:
-        c = c.replace(t_enum, rep_enum)
-        with open(p_hh, 'w') as f:
-            f.write(c)
-        print('Successfully patched GHOST_ContextVK.hh')
-
-# 2. Update GHOST_ContextVK.cc for SDL Vulkan surface and Android swapchain
-p_vk = blender_src + '/intern/ghost/intern/GHOST_ContextVK.cc'
-if os.path.exists(p_vk):
-    with open(p_vk, 'r') as f:
+p = blender_src + '/intern/ghost/intern/GHOST_ContextVK.cc'
+if os.path.exists(p):
+    with open(p, 'r') as f:
         c = f.read()
 
-    # Include SDL headers for SDL_Vulkan_CreateSurface
-    if '<SDL3/SDL_vulkan.h>' not in c:
-        c = '#ifdef __ANDROID__\n#  include <SDL3/SDL.h>\n#  include <SDL3/SDL_vulkan.h>\n#endif\n' + c
+    # 1. select_physical_device: don't reject Android GPUs lacking geometryShader, dualSrcBlend, etc.
+    t_select = '''      if (
+#ifndef __APPLE__
+          !device_vk.features.features.geometryShader ||
+#endif
+          !device_vk.features.features.fragmentStoresAndAtomics ||
+          !device_vk.features.features.imageCubeArray ||
+          !device_vk.features.features.dualSrcBlend || !device_vk.features.features.imageCubeArray)
+      {
+        continue;
+      }'''
+    rep_select = '''#ifndef __ANDROID__
+      if (
+#ifndef __APPLE__
+          !device_vk.features.features.geometryShader ||
+#endif
+          !device_vk.features.features.fragmentStoresAndAtomics ||
+          !device_vk.features.features.imageCubeArray ||
+          !device_vk.features.features.dualSrcBlend || !device_vk.features.features.imageCubeArray)
+      {
+        continue;
+      }
+#endif'''
+    if t_select in c:
+        c = c.replace(t_select, rep_select)
+        print('Successfully patched select_physical_device in GHOST_ContextVK.cc')
+    else:
+        print('WARN: t_select not found in GHOST_ContextVK.cc')
 
-    # Platform surface extension
-    t_ext = '''    case GHOST_kVulkanPlatformHeadless:
-      break;
-  }
+    # 2. create_device: on Android use device.features.features directly without demanding desktop-only features
+    t_dev = '''    VkPhysicalDeviceFeatures device_features = {};
+#ifndef __APPLE__
+    device_features.geometryShader = VK_TRUE;
 #endif
-  return nullptr;
-}'''
-    rep_ext = '''    case GHOST_kVulkanPlatformSDL:
-      return "VK_KHR_android_surface";
-    case GHOST_kVulkanPlatformHeadless:
-      break;
-  }
+    device_features.vertexPipelineStoresAndAtomics =
+        device.features.features.vertexPipelineStoresAndAtomics;
+    device_features.multiViewport = device.features.features.multiViewport;
+    device_features.shaderClipDistance = device.features.features.shaderClipDistance;
+    device_features.fragmentStoresAndAtomics = VK_TRUE;
+
+    device_features.dualSrcBlend = VK_TRUE;
+    device_features.imageCubeArray = VK_TRUE;
+    device_features.multiDrawIndirect = device.features.features.multiDrawIndirect;
+    device_features.drawIndirectFirstInstance = VK_TRUE;
+    device_features.samplerAnisotropy = device.features.features.samplerAnisotropy;
+    device_features.wideLines = device.features.features.wideLines;'''
+
+    rep_dev = '''#ifndef __ANDROID__
+    VkPhysicalDeviceFeatures device_features = {};
+#ifndef __APPLE__
+    device_features.geometryShader = VK_TRUE;
 #endif
-  return nullptr;
-}'''
+    device_features.vertexPipelineStoresAndAtomics =
+        device.features.features.vertexPipelineStoresAndAtomics;
+    device_features.multiViewport = device.features.features.multiViewport;
+    device_features.shaderClipDistance = device.features.features.shaderClipDistance;
+    device_features.fragmentStoresAndAtomics = VK_TRUE;
+
+    device_features.dualSrcBlend = VK_TRUE;
+    device_features.imageCubeArray = VK_TRUE;
+    device_features.multiDrawIndirect = device.features.features.multiDrawIndirect;
+    device_features.drawIndirectFirstInstance = VK_TRUE;
+    device_features.samplerAnisotropy = device.features.features.samplerAnisotropy;
+    device_features.wideLines = device.features.features.wideLines;
+#else
+    VkPhysicalDeviceFeatures device_features = device.features.features;
+    device_features.robustBufferAccess = VK_FALSE;
+#endif'''
+    if t_dev in c:
+        c = c.replace(t_dev, rep_dev)
+        print('Successfully patched create_device in GHOST_ContextVK.cc')
+    else:
+        print('WARN: t_dev not found in GHOST_ContextVK.cc')
+
+    # 3. recreateSwapchain extent: query SDL window size when extent is UINT32_MAX
+    t_ext = '''    /* Window Manager is going to set the surface size based on the given size.
+     * Choose something between minImageExtent and maxImageExtent. */
+    int width = 0;
+    int height = 0;
+
+#ifdef WITH_GHOST_WAYLAND'''
+
+    rep_ext = '''    /* Window Manager is going to set the surface size based on the given size.
+     * Choose something between minImageExtent and maxImageExtent. */
+    int width = 0;
+    int height = 0;
+
+#if defined(WITH_GHOST_SDL)
+    if (sdl_window_) {
+      SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
+    }
+#endif
+#ifdef WITH_GHOST_WAYLAND'''
     if t_ext in c:
         c = c.replace(t_ext, rep_ext)
-        print('Patched getPlatformSpecificSurfaceExtension')
+        print('Successfully patched swapchain extent in GHOST_ContextVK.cc')
+    else:
+        print('WARN: t_ext not found in GHOST_ContextVK.cc')
 
-    # use_window_surface
-    t_use = '''    case GHOST_kVulkanPlatformHeadless:
-      use_window_surface = false;
-      break;
-  }
-#endif'''
-    rep_use = '''    case GHOST_kVulkanPlatformSDL:
-      use_window_surface = (window_ != nullptr);
-      break;
-    case GHOST_kVulkanPlatformHeadless:
-      use_window_surface = false;
-      break;
-  }
-#endif'''
-    if t_use in c:
-        c = c.replace(t_use, rep_use)
-        print('Patched use_window_surface')
+    # 4. imageUsage: support COLOR_ATTACHMENT fallback
+    t_usage = 'create_info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |'
+    rep_usage = '''VkImageUsageFlags desired_usage = (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) ?
+                                          VK_IMAGE_USAGE_TRANSFER_DST_BIT :
+                                          VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  create_info.imageUsage = desired_usage |'''
+    if t_usage in c:
+        c = c.replace(t_usage, rep_usage)
+        print('Successfully patched imageUsage in GHOST_ContextVK.cc')
+    else:
+        print('WARN: t_usage not found in GHOST_ContextVK.cc')
 
-    # Initialize VkSurface via SDL_Vulkan_CreateSurface
-    t_surf = '''      case GHOST_kVulkanPlatformHeadless: {
-        surface_ = VK_NULL_HANDLE;
-        break;
-      }'''
-    rep_surf = '''      case GHOST_kVulkanPlatformSDL: {
-#ifdef __ANDROID__
-        SDL_Window *sdl_window = static_cast<SDL_Window *>(window_);
-        if (!SDL_Vulkan_CreateSurface(sdl_window, instance_vk.vk_instance, nullptr, &surface_)) {
-          CLOG_ERROR(&LOG, "SDL_Vulkan_CreateSurface failed: %s", SDL_GetError());
-          return GHOST_kFailure;
-        }
-#endif
-        break;
-      }
-      case GHOST_kVulkanPlatformHeadless: {
-        surface_ = VK_NULL_HANDLE;
-        break;
-      }'''
-    if t_surf in c:
-        c = c.replace(t_surf, rep_surf)
-        print('Patched surface creation in GHOST_ContextVK.cc')
-
-    # Fallback in selectSurfaceFormat
+    # 5. selectSurfaceFormat fallback
     t_fmt = '''    for (const VkSurfaceFormatKHR &format : formats) {
       if (format.format == config.format && format.colorSpace == config.colorSpace) {
         r_surfaceFormat = format;
@@ -632,98 +540,40 @@ if os.path.exists(p_vk):
 }'''
     if t_fmt in c:
         c = c.replace(t_fmt, rep_fmt)
-        print('Patched selectSurfaceFormat fallback')
+        print('Successfully patched selectSurfaceFormat in GHOST_ContextVK.cc')
+    else:
+        print('WARN: t_fmt not found in GHOST_ContextVK.cc')
 
-    with open(p_vk, 'w') as f:
+    # 6. Add explicit diagnostic logging on Android for device & swapchain creation
+    t_log_dev = 'device_vk.users++;'
+    rep_log_dev = '''device_vk.users++;
+#ifdef __ANDROID__
+  printf("[BLENDER_VK] Physical device & VkDevice created successfully!\n");
+  fflush(stdout);
+#endif'''
+    if t_log_dev in c:
+        c = c.replace(t_log_dev, rep_log_dev)
+        print('Successfully added Vulkan device diagnostic logging')
+
+    t_log_swap = 'render_frame_ = 0;'
+    rep_log_swap = '''render_frame_ = 0;
+#ifdef __ANDROID__
+  printf("[BLENDER_VK] Swapchain created successfully! Extent: %ux%u, format: %d\n", render_extent_.width, render_extent_.height, surface_format_.format);
+  fflush(stdout);
+#endif'''
+    if t_log_swap in c:
+        c = c.replace(t_log_swap, rep_log_swap)
+        print('Successfully added Vulkan swapchain diagnostic logging')
+
+    with open(p, 'w') as f:
         f.write(c)
-    print('Successfully patched GHOST_ContextVK.cc')
-
-# 3. Update GHOST_SystemSDL.cc for offscreen Vulkan context (Headless)
-p_sys = blender_src + '/intern/ghost/intern/GHOST_SystemSDL.cc'
-if os.path.exists(p_sys):
-    with open(p_sys, 'r') as f:
-        c = f.read()
-    if '#include "GHOST_ContextVK.hh"' not in c:
-        c = '#include "GHOST_ContextVK.hh"\n' + c
-    t_sys = '''  switch (gpu_settings.context_type) {
-#ifdef WITH_OPENGL_BACKEND'''
-    rep_sys = '''  switch (gpu_settings.context_type) {
-#ifdef WITH_VULKAN_BACKEND
-    case GHOST_kDrawingContextTypeVulkan: {
-      GHOST_Context *context = new GHOST_ContextVK(
-          context_params_offscreen,
-          GHOST_kVulkanPlatformHeadless,
-          nullptr,
-          nullptr,
-          nullptr,
-          nullptr,
-          nullptr,
-          1,
-          1,
-          gpu_settings.preferred_device);
-      if (context->initializeDrawingContext()) {
-        return context;
-      }
-      delete context;
-      return nullptr;
-    }
-#endif
-#ifdef WITH_OPENGL_BACKEND'''
-    if t_sys in c:
-        c = c.replace(t_sys, rep_sys)
-        with open(p_sys, 'w') as f:
-            f.write(c)
-        print('Successfully patched GHOST_SystemSDL.cc')
-
-# 4. Update GHOST_WindowSDL.cc for on-screen SDL Vulkan swapchain context
-p_win = blender_src + '/intern/ghost/intern/GHOST_WindowSDL.cc'
-if os.path.exists(p_win):
-    with open(p_win, 'r') as f:
-        c = f.read()
-    if '#include "GHOST_ContextVK.hh"' not in c:
-        c = '#include "GHOST_ContextVK.hh"\n' + c
-
-    # Create window with SDL_WINDOW_VULKAN
-    t_create = 'sdl_win_ = SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);'
-    rep_create = 'sdl_win_ = SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE | (type == GHOST_kDrawingContextTypeVulkan ? SDL_WINDOW_VULKAN : SDL_WINDOW_OPENGL));'
-    if t_create in c:
-        c = c.replace(t_create, rep_create)
-        print('Patched SDL_CreateWindow with SDL_WINDOW_VULKAN')
-
-    # Create drawing context with GHOST_kVulkanPlatformSDL and sdl_win_
-    t_win_ctx = '''  switch (want_context_type_) {
-#ifdef WITH_OPENGL_BACKEND'''
-    rep_win_ctx = '''  switch (want_context_type_) {
-#ifdef WITH_VULKAN_BACKEND
-    case GHOST_kDrawingContextTypeVulkan: {
-      GHOST_GPUDevice preferred_device = {};
-      GHOST_Context *context = new GHOST_ContextVK(
-          want_context_params_,
-          GHOST_kVulkanPlatformSDL,
-          (Window)sdl_win_,
-          nullptr,
-          nullptr,
-          nullptr,
-          nullptr,
-          1,
-          1,
-          preferred_device);
-      if (context->initializeDrawingContext()) {
-        return context;
-      }
-      delete context;
-      return nullptr;
-    }
-#endif
-#ifdef WITH_OPENGL_BACKEND'''
-    if t_win_ctx in c:
-        c = c.replace(t_win_ctx, rep_win_ctx)
-        print('Patched newDrawingContext with GHOST_kVulkanPlatformSDL')
-
-    with open(p_win, 'w') as f:
-        f.write(c)
-    print('Successfully patched GHOST_WindowSDL.cc')
 PYEOF
+
+# Ensure makesrna defines WITH_PYTHON so that Operator/Panel/Menu register functions are generated
+if [ -f "${BLENDER_SRC}/source/blender/makesrna/intern/CMakeLists.txt" ]; then
+    sed -i 's/if(WITH_PYTHON)/if(TRUE)/' "${BLENDER_SRC}/source/blender/makesrna/intern/CMakeLists.txt"
+    echo "Patched makesrna CMakeLists.txt to always enable WITH_PYTHON"
+fi
 
 # Guard wm_operators.cc, wm_gizmo.cc, view3d_gizmo_navigate.cc, appdir.cc and bpy_interface.cc
 python3 - << 'PYEOF'
@@ -1089,21 +939,7 @@ CEOF
 fi
 
 
-# Ensure Android Vulkan swapchain supports both COLOR_ATTACHMENT and TRANSFER_DST
-if [ -f "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc" ]; then
-    python3 -c "
-p = '${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc'
-with open(p, 'r') as f:
-    c = f.read()
-target = 'create_info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |'
-repl = '''VkImageUsageFlags desired_usage = (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-  create_info.imageUsage = desired_usage |'''
-if target in c:
-    c = c.replace(target, repl)
-with open(p, 'w') as f:
-    f.write(c)
-"
-fi
+# (Duplicate swapchain patch removed)
 
 
 
