@@ -421,7 +421,20 @@ if os.path.exists(p_vk):
 
     # Include SDL headers for SDL_Vulkan_CreateSurface
     if '<SDL3/SDL_vulkan.h>' not in c:
-        c = '#ifdef __ANDROID__\n#  include <SDL3/SDL.h>\n#  include <SDL3/SDL_vulkan.h>\n#  include <cstdio>\n#endif\n' + c
+        c = '''#ifdef __ANDROID__
+#  include <SDL3/SDL.h>
+#  include <SDL3/SDL_vulkan.h>
+#  include <cstdio>
+#  include <android/log.h>
+#  define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, "BlenderVK", __VA_ARGS__)
+#  define ALOGW(...) __android_log_print(ANDROID_LOG_WARN, "BlenderVK", __VA_ARGS__)
+#  define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, "BlenderVK", __VA_ARGS__)
+#else
+#  define ALOGI(...)
+#  define ALOGW(...)
+#  define ALOGE(...)
+#endif
+''' + c
 
     # Platform surface extension
     t_ext = '''    case GHOST_kVulkanPlatformHeadless:
@@ -588,11 +601,16 @@ if os.path.exists(p_vk):
     t_res = '''  VK_CHECK(vkCreateSwapchainKHR(device_vk.vk_device, &create_info, nullptr, &swapchain_),
            GHOST_kFailure);'''
     rep_res = '''  VkResult swapchain_res = vkCreateSwapchainKHR(device_vk.vk_device, &create_info, nullptr, &swapchain_);
+  ALOGI("vkCreateSwapchainKHR result=%d, format=%d, colorSpace=%d, extent=%ux%u, usage=0x%x, alpha=0x%x, count=%u",
+        swapchain_res, create_info.imageFormat, create_info.imageColorSpace,
+        create_info.imageExtent.width, create_info.imageExtent.height,
+        create_info.imageUsage, create_info.compositeAlpha, create_info.minImageCount);
   fprintf(stderr,
           "BlenderVK: vkCreateSwapchainKHR result=%d, format=%d, colorSpace=%d, extent=%ux%u, usage=0x%x, alpha=0x%x, count=%u\\n",
           swapchain_res, create_info.imageFormat, create_info.imageColorSpace,
           create_info.imageExtent.width, create_info.imageExtent.height,
           create_info.imageUsage, create_info.compositeAlpha, create_info.minImageCount);
+  fflush(stderr);
   if (swapchain_res != VK_SUCCESS) {
     return GHOST_kFailure;
   }'''
@@ -633,7 +651,9 @@ if os.path.exists(p_vk):
     for (const VkSurfaceFormatKHR &format : formats) {
       if (format.format == desired_fmt) {
         r_surfaceFormat = format;
+        ALOGI("Selected surface format: %d, colorSpace: %d", format.format, format.colorSpace);
         fprintf(stderr, "BlenderVK: Selected surface format: %d, colorSpace: %d\\n", format.format, format.colorSpace);
+        fflush(stderr);
         return true;
       }
     }
@@ -642,7 +662,9 @@ if os.path.exists(p_vk):
   for (const VkSurfaceFormatKHR &format : formats) {
     if (format.format != 56 && format.format != 59) {
       r_surfaceFormat = format;
+      ALOGW("Fallback surface format: %d, colorSpace: %d", format.format, format.colorSpace);
       fprintf(stderr, "BlenderVK: Fallback surface format: %d, colorSpace: %d\\n", format.format, format.colorSpace);
+      fflush(stderr);
       return true;
     }
   }
@@ -652,6 +674,88 @@ if os.path.exists(p_vk):
     if t_fmt in c:
         c = c.replace(t_fmt, rep_fmt)
         print('Patched selectSurfaceFormat fallback')
+
+    # swapBufferAcquire: on Android, VK_SUBOPTIMAL_KHR is valid and must NOT trigger endless recreation
+    t_acq = '''  /* Acquiree next image, swapchain can be (or become) invalid when minimizing window. */
+  uint32_t image_index = 0;
+  if (swapchain_ != VK_NULL_HANDLE) {
+    /* Some platforms (NVIDIA/Wayland) can receive an out of date swapchain when acquiring the next
+     * swapchain image. Other do it when calling vkQueuePresent. */
+    VkResult acquire_result = VK_ERROR_OUT_OF_DATE_KHR;
+    while (swapchain_ != VK_NULL_HANDLE &&
+           (ELEM(acquire_result, VK_ERROR_OUT_OF_DATE_KHR, VK_SUBOPTIMAL_KHR)))
+    {
+      acquire_result = vkAcquireNextImageKHR(vk_device,
+                                             swapchain_,
+                                             UINT64_MAX,
+                                             submission_frame_data.acquire_semaphore,
+                                             VK_NULL_HANDLE,
+                                             &image_index);
+      if (ELEM(acquire_result, VK_ERROR_OUT_OF_DATE_KHR, VK_SUBOPTIMAL_KHR)) {
+        recreateSwapchain(use_hdr_swapchain);
+      }
+    }
+  }'''
+    rep_acq = '''  /* Acquire next image, swapchain can be (or become) invalid when minimizing window. */
+  uint32_t image_index = 0;
+  if (swapchain_ != VK_NULL_HANDLE) {
+    /* On Android, VK_SUBOPTIMAL_KHR is valid and must NOT trigger endless swapchain recreation.
+     * Also add an attempt limit so a transient out-of-date state cannot lock the thread in an infinite loop. */
+    VkResult acquire_result = VK_ERROR_OUT_OF_DATE_KHR;
+    int acquire_attempts = 0;
+    while (swapchain_ != VK_NULL_HANDLE &&
+           (acquire_result == VK_ERROR_OUT_OF_DATE_KHR) &&
+           acquire_attempts < 3)
+    {
+      acquire_attempts++;
+      acquire_result = vkAcquireNextImageKHR(vk_device,
+                                             swapchain_,
+                                             UINT64_MAX,
+                                             submission_frame_data.acquire_semaphore,
+                                             VK_NULL_HANDLE,
+                                             &image_index);
+      ALOGI("swapBufferAcquire: attempt %d, result=%d, image_index=%u",
+            acquire_attempts, acquire_result, image_index);
+      if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR) {
+        recreateSwapchain(use_hdr_swapchain);
+      }
+    }
+
+    if (acquire_result != VK_SUCCESS && acquire_result != VK_SUBOPTIMAL_KHR) {
+      ALOGE("Vulkan: failed to acquire swapchain image: %d", acquire_result);
+      CLOG_ERROR(&LOG,
+                 "Vulkan: failed to acquire swapchain image: %s",
+                 blender::gpu::to_string(acquire_result));
+      return GHOST_kFailure;
+    }
+  }'''
+    if t_acq in c:
+        c = c.replace(t_acq, rep_acq)
+        print('Patched swapBufferAcquire to prevent infinite recreation loop')
+
+    # swapBufferRelease: do not recreate swapchain on VK_SUBOPTIMAL_KHR on Android
+    t_rel = '''  if (ELEM(present_result, VK_ERROR_OUT_OF_DATE_KHR, VK_SUBOPTIMAL_KHR)) {
+    recreateSwapchain(use_hdr_swapchain);
+    return GHOST_kSuccess;
+  }'''
+    rep_rel = '''#ifdef __ANDROID__
+  ALOGI("swapBufferRelease: vkQueuePresentKHR result=%d, image_index=%u", present_result, image_index);
+  if (present_result == VK_ERROR_OUT_OF_DATE_KHR) {
+    recreateSwapchain(use_hdr_swapchain);
+    return GHOST_kSuccess;
+  }
+  if (present_result == VK_SUBOPTIMAL_KHR) {
+    return GHOST_kSuccess;
+  }
+#else
+  if (ELEM(present_result, VK_ERROR_OUT_OF_DATE_KHR, VK_SUBOPTIMAL_KHR)) {
+    recreateSwapchain(use_hdr_swapchain);
+    return GHOST_kSuccess;
+  }
+#endif'''
+    if t_rel in c:
+        c = c.replace(t_rel, rep_rel)
+        print('Patched swapBufferRelease present handling')
 
     with open(p_vk, 'w') as f:
         f.write(c)
