@@ -323,6 +323,93 @@ if [ -f "${BLENDER_SRC}/source/blender/draw/intern/DRW_gpu_wrapper.hh" ]; then
 fi
 
 
+
+# Ensure Android Vulkan swapchain supports both COLOR_ATTACHMENT and TRANSFER_DST
+if [ -f "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc" ]; then
+    python3 -c "
+p = '${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc'
+with open(p, 'r') as f:
+    c = f.read()
+target = 'create_info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |'
+repl = '''VkImageUsageFlags desired_usage = (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  create_info.imageUsage = desired_usage |'''
+if target in c:
+    c = c.replace(target, repl)
+with open(p, 'w') as f:
+    f.write(c)
+"
+fi
+
+# Ensure window is kept alive on Android and bypass fatal platform check exit
+if [ -f "${BLENDER_SRC}/source/blender/windowmanager/intern/wm_init_exit.cc" ]; then
+    python3 -c "
+p = '${BLENDER_SRC}/source/blender/windowmanager/intern/wm_init_exit.cc'
+with open(p, 'r') as f:
+    c = f.read()
+
+target1 = '''    if (wm != nullptr) {
+      wm_window_ghostwindows_remove_invalid(C, wm);
+    }
+    if (wm == nullptr || wm->windows.is_empty()) {
+      if (params_file_read_post != nullptr) {
+        MEM_delete_void(static_cast<void *>(params_file_read_post));
+        params_file_read_post = nullptr;
+      }
+      WM_exit(C, EXIT_FAILURE);
+    }'''
+
+repl1 = '''#ifndef __ANDROID__
+    if (wm != nullptr) {
+      wm_window_ghostwindows_remove_invalid(C, wm);
+    }
+    if (wm == nullptr || wm->windows.is_empty()) {
+      if (params_file_read_post != nullptr) {
+        MEM_delete_void(static_cast<void *>(params_file_read_post));
+        params_file_read_post = nullptr;
+      }
+      WM_exit(C, EXIT_FAILURE);
+    }
+#else
+    printf(\"BlenderNative: ensuring windows on Android...\\n\");
+    if (wm == nullptr || wm->windows.is_empty()) {
+      printf(\"BlenderNative: creating fallback default window...\\n\");
+      wm_add_default(CTX_data_main(C), C);
+      wm = CTX_wm_manager(C);
+    }
+    if (wm != nullptr) {
+      wm_window_ghostwindows_ensure(wm);
+    }
+#endif'''
+
+target2 = '''    if (!WM_platform_support_perform_checks()) {
+      WM_exit(C, -1);
+    }'''
+
+repl2 = '''#ifndef __ANDROID__
+    if (!WM_platform_support_perform_checks()) {
+      WM_exit(C, -1);
+    }
+#else
+    WM_platform_support_perform_checks();
+#endif'''
+
+if target1 in c:
+    c = c.replace(target1, repl1)
+    print('Patched target1 in wm_init_exit.cc')
+else:
+    print('WARNING: target1 not found in wm_init_exit.cc')
+
+if target2 in c:
+    c = c.replace(target2, repl2)
+    print('Patched target2 in wm_init_exit.cc')
+else:
+    print('WARNING: target2 not found in wm_init_exit.cc')
+
+with open(p, 'w') as f:
+    f.write(c)
+"
+fi
+
 # Add ANativeActivity entry point and Vulkan NDK compatibility stubs to creator.cc
 if [ -f "${BLENDER_SRC}/source/creator/creator.cc" ]; then
     # Rename main to blender_main_impl and provide extern "C" SDL_main for SDLActivity
@@ -395,7 +482,7 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char *a
     const char *ui_argv[] = {"blender", nullptr};
     int ret = blender_main_impl(1, ui_argv);
     ALOGI("blender_main_impl finished with code: %d", ret);
-    return ret;
+    _exit(ret);
 }
 
 extern "C" {
