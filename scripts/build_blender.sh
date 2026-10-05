@@ -545,28 +545,89 @@ if os.path.exists(p_vk):
         c = c.replace(t_dev, rep_dev)
         print('Patched create_device in GHOST_ContextVK.cc')
 
-    # recreateSwapchain extent: query SDL window size when extent is UINT32_MAX
-    t_swap_ext = '''    /* Window Manager is going to set the surface size based on the given size.
+    # recreateSwapchain extent: query SDL window size when extent is UINT32_MAX, 0, or uninitialized
+    t_ext_full = '''  use_hdr_swapchain_ = use_hdr_swapchain;
+  render_extent_ = capabilities.currentExtent;
+  render_extent_min_ = capabilities.minImageExtent;
+  if (render_extent_.width == UINT32_MAX) {
+    /* Window Manager is going to set the surface size based on the given size.
      * Choose something between minImageExtent and maxImageExtent. */
     int width = 0;
     int height = 0;
 
-#ifdef WITH_GHOST_WAYLAND'''
+#ifdef WITH_GHOST_WAYLAND
+    /* Wayland doesn't provide a windowing API via WSI. */
+    if (wayland_window_info_) {
+      width = wayland_window_info_->size[0];
+      height = wayland_window_info_->size[1];
+    }
+#endif
 
-    rep_swap_ext = '''    /* Window Manager is going to set the surface size based on the given size.
-     * Choose something between minImageExtent and maxImageExtent. */
+    if (width == 0 || height == 0) {
+      width = 1280;
+      height = 720;
+    }
+
+    render_extent_.width = width;
+    render_extent_.height = height;
+
+    if (capabilities.minImageExtent.width > render_extent_.width) {
+      render_extent_.width = capabilities.minImageExtent.width;
+    }
+    if (capabilities.minImageExtent.height > render_extent_.height) {
+      render_extent_.height = capabilities.minImageExtent.height;
+    }
+  }'''
+
+    rep_ext_full = '''  use_hdr_swapchain_ = use_hdr_swapchain;
+  render_extent_ = capabilities.currentExtent;
+  render_extent_min_ = capabilities.minImageExtent;
+  ALOGI("recreateSwapchain: capabilities.currentExtent=(%u,%u), minImageExtent=(%u,%u), maxImageExtent=(%u,%u)",
+        capabilities.currentExtent.width, capabilities.currentExtent.height,
+        capabilities.minImageExtent.width, capabilities.minImageExtent.height,
+        capabilities.maxImageExtent.width, capabilities.maxImageExtent.height);
+  if (render_extent_.width == UINT32_MAX || render_extent_.width == 0 || render_extent_.height == 0) {
     int width = 0;
     int height = 0;
 
 #ifdef __ANDROID__
     if (window_) {
       SDL_GetWindowSizeInPixels((SDL_Window *)window_, &width, &height);
+      ALOGI("recreateSwapchain: queried SDL_GetWindowSizeInPixels: %dx%d", width, height);
     }
 #endif
-#ifdef WITH_GHOST_WAYLAND'''
-    if t_swap_ext in c:
-        c = c.replace(t_swap_ext, rep_swap_ext)
-        print('Patched swapchain extent in GHOST_ContextVK.cc')
+#ifdef WITH_GHOST_WAYLAND
+    if (wayland_window_info_) {
+      width = wayland_window_info_->size[0];
+      height = wayland_window_info_->size[1];
+    }
+#endif
+
+    if (width == 0 || height == 0) {
+      width = 2944;
+      height = 1840;
+    }
+
+    render_extent_.width = width;
+    render_extent_.height = height;
+
+    if (capabilities.minImageExtent.width > render_extent_.width) {
+      render_extent_.width = capabilities.minImageExtent.width;
+    }
+    if (capabilities.minImageExtent.height > render_extent_.height) {
+      render_extent_.height = capabilities.minImageExtent.height;
+    }
+    if (capabilities.maxImageExtent.width > 0 && capabilities.maxImageExtent.width < render_extent_.width) {
+      render_extent_.width = capabilities.maxImageExtent.width;
+    }
+    if (capabilities.maxImageExtent.height > 0 && capabilities.maxImageExtent.height < render_extent_.height) {
+      render_extent_.height = capabilities.maxImageExtent.height;
+    }
+    ALOGI("recreateSwapchain: final calculated render_extent_=(%u,%u)", render_extent_.width, render_extent_.height);
+  }'''
+    if t_ext_full in c:
+        c = c.replace(t_ext_full, rep_ext_full)
+        print('Patched full swapchain extent in GHOST_ContextVK.cc')
 
     # imageUsage & compositeAlpha in recreateSwapchain
     t_ci = '''  create_info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |
@@ -760,6 +821,35 @@ if os.path.exists(p_vk):
     with open(p_vk, 'w') as f:
         f.write(c)
     print('Successfully patched GHOST_ContextVK.cc')
+
+    # Disable swapchain_maintenance_1 on Android to use stable WSI
+    t_maint = '''    if (device.extensions.is_enabled(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME)) {
+      feature_struct_ptr.push_back(&swapchain_maintenance_1);
+      device.use_vk_ext_swapchain_maintenance_1 = true;
+    }'''
+    rep_maint = '''    if (device.extensions.is_enabled(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME)) {
+#ifndef __ANDROID__
+      feature_struct_ptr.push_back(&swapchain_maintenance_1);
+      device.use_vk_ext_swapchain_maintenance_1 = true;
+#endif
+    }'''
+    if t_maint in c:
+        c = c.replace(t_maint, rep_maint)
+        print('Patched swapchain_maintenance_1 for Android')
+
+    # Entrance log for recreateSwapchain
+    t_rec = 'GHOST_TSuccess GHOST_ContextVK::recreateSwapchain(bool use_hdr_swapchain)\n{'
+    rep_rec = 'GHOST_TSuccess GHOST_ContextVK::recreateSwapchain(bool use_hdr_swapchain)\n{\n  ALOGI("recreateSwapchain START: use_hdr=%d, surface_=%p, window_=%p", use_hdr_swapchain, (void*)surface_, (void*)window_);'
+    if t_rec in c:
+        c = c.replace(t_rec, rep_rec)
+        print('Patched recreateSwapchain entrance log')
+
+    # Entrance log for swapBufferAcquire
+    t_acq_ent = 'GHOST_TSuccess GHOST_ContextVK::swapBufferAcquire()\n{'
+    rep_acq_ent = 'GHOST_TSuccess GHOST_ContextVK::swapBufferAcquire()\n{\n  ALOGI("swapBufferAcquire START: swapchain_=%p", (void*)swapchain_);'
+    if t_acq_ent in c:
+        c = c.replace(t_acq_ent, rep_acq_ent)
+        print('Patched swapBufferAcquire entrance log')
 
 # 3. Update GHOST_SystemSDL.cc for offscreen Vulkan context (Headless)
 p_sys = blender_src + '/intern/ghost/intern/GHOST_SystemSDL.cc'
