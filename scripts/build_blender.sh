@@ -224,17 +224,6 @@ if [ ! -f "${BLENDER_SRC}/release/datafiles/fonts/Inter.ttf" ]; then
     cp -f "${BLENDER_SRC}/release/datafiles/fonts/Inter.ttf" "${BLENDER_SRC}/release/datafiles/fonts/DejaVuSansMono.ttf"
 fi
 
-echo "===> Updating GHOST SDL Vulkan backend files from upstream main..."
-GHOST_MAIN_URL="https://raw.githubusercontent.com/blender/blender/main/intern/ghost/intern"
-for f in GHOST_ContextVK.cc GHOST_ContextVK.hh GHOST_WindowSDL.cc GHOST_WindowSDL.hh GHOST_SystemSDL.cc; do
-    echo "Downloading ${f} from upstream main..."
-    curl -sL "${GHOST_MAIN_URL}/${f}" -o "${BLENDER_SRC}/intern/ghost/intern/${f}"
-done
-
-# Ensure GHOST CMakeLists.txt doesn't compile GHOST_ContextSDL.cc without OpenGL
-sed -i 's/intern\/GHOST_ContextSDL.cc//g' "${BLENDER_SRC}/intern/ghost/CMakeLists.txt"
-sed -i 's/intern\/GHOST_ContextSDL.hh//g' "${BLENDER_SRC}/intern/ghost/CMakeLists.txt"
-
 echo "===> Patching Blender CMake for Android ARM64..."
 # Bypass startup.blend size check
 sed -i 's/message(FATAL_ERROR "Detected incomplete startup blend/# &/' "${BLENDER_SRC}/CMakeLists.txt" 
@@ -425,7 +414,7 @@ PYEOF
 fi
 
 
-# Ensure GHOST_ContextVK does not reject Android GPUs lacking geometryShader, dualSrcBlend, or drawIndirectFirstInstance
+# Ensure GHOST_ContextVK does not reject Android GPUs lacking geometryShader, multiViewport, etc.
 if [ -f "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc" ]; then
     python3 - << 'PYEOF'
 import os
@@ -434,49 +423,272 @@ if os.path.exists(p):
     with open(p, 'r') as f:
         c = f.read()
 
-    t1 = """#ifndef __APPLE__
+    target1 = '''      if (
+#ifndef __APPLE__
           !device_vk.features.features.geometryShader ||
-#endif"""
-    rep1 = """#if !defined(__APPLE__) && !defined(__ANDROID__)
+#endif
+          !device_vk.features.features.vertexPipelineStoresAndAtomics ||
+          !device_vk.features.features.multiViewport ||
+          !device_vk.features.features.shaderClipDistance ||
+          !device_vk.features.features.fragmentStoresAndAtomics ||
+          !device_vk.features.features.multiDrawIndirect ||
+          !device_vk.features.features.imageCubeArray ||
+          !device_vk.features.features.dualSrcBlend || !device_vk.features.features.logicOp ||
+          !device_vk.features.features.imageCubeArray)
+      {
+        continue;
+      }'''
+
+    repl1 = '''#ifndef __ANDROID__
+      if (
+#ifndef __APPLE__
           !device_vk.features.features.geometryShader ||
-#endif"""
-
-    t2 = "          !device_vk.features.features.dualSrcBlend ||"
-    rep2 = """#ifndef __ANDROID__
-          !device_vk.features.features.dualSrcBlend ||
-#endif"""
-
-    t3 = """#ifndef __APPLE__
-    device_features.geometryShader = VK_TRUE;
-#endif"""
-    rep3 = """#if !defined(__APPLE__) && !defined(__ANDROID__)
-    device_features.geometryShader = VK_TRUE;
+#endif
+          !device_vk.features.features.vertexPipelineStoresAndAtomics ||
+          !device_vk.features.features.multiViewport ||
+          !device_vk.features.features.shaderClipDistance ||
+          !device_vk.features.features.fragmentStoresAndAtomics ||
+          !device_vk.features.features.multiDrawIndirect ||
+          !device_vk.features.features.imageCubeArray ||
+          !device_vk.features.features.dualSrcBlend || !device_vk.features.features.logicOp ||
+          !device_vk.features.features.imageCubeArray)
+      {
+        continue;
+      }
 #else
-    device_features.geometryShader = device.features.features.geometryShader;
-#endif"""
+      if (!device_vk.features.features.fragmentStoresAndAtomics ||
+          !device_vk.features.features.imageCubeArray)
+      {
+        continue;
+      }
+#endif'''
 
-    t4 = "    device_features.dualSrcBlend = VK_TRUE;"
-    rep4 = """#ifndef __ANDROID__
+    target2 = '''    VkPhysicalDeviceFeatures device_features = {};
+#ifndef __APPLE__
+    device_features.geometryShader = VK_TRUE;
+#endif
+    device_features.vertexPipelineStoresAndAtomics = VK_TRUE;
+    device_features.multiViewport = VK_TRUE;
+    device_features.shaderClipDistance = VK_TRUE;
+    device_features.fragmentStoresAndAtomics = VK_TRUE;
+    device_features.logicOp = VK_TRUE;
     device_features.dualSrcBlend = VK_TRUE;
-#else
-    device_features.dualSrcBlend = device.features.features.dualSrcBlend;
-#endif"""
+    device_features.imageCubeArray = VK_TRUE;
+    device_features.multiDrawIndirect = VK_TRUE;
+    device_features.drawIndirectFirstInstance = VK_TRUE;'''
 
-    t5 = "    device_features.drawIndirectFirstInstance = VK_TRUE;"
-    rep5 = """#ifndef __ANDROID__
+    repl2 = '''    VkPhysicalDeviceFeatures device_features = {};
+#ifndef __ANDROID__
+#ifndef __APPLE__
+    device_features.geometryShader = VK_TRUE;
+#endif
+    device_features.vertexPipelineStoresAndAtomics = VK_TRUE;
+    device_features.multiViewport = VK_TRUE;
+    device_features.shaderClipDistance = VK_TRUE;
+    device_features.fragmentStoresAndAtomics = VK_TRUE;
+    device_features.logicOp = VK_TRUE;
+    device_features.dualSrcBlend = VK_TRUE;
+    device_features.imageCubeArray = VK_TRUE;
+    device_features.multiDrawIndirect = VK_TRUE;
     device_features.drawIndirectFirstInstance = VK_TRUE;
 #else
-    device_features.drawIndirectFirstInstance = device.features.features.drawIndirectFirstInstance;
-#endif"""
+    device_features = device.features.features;
+#endif'''
 
-    for idx, (t, r) in enumerate([(t1, rep1), (t2, rep2), (t3, rep3), (t4, rep4), (t5, rep5)], 1):
-        if t in c:
-            c = c.replace(t, r)
-            print(f"Patched GHOST_ContextVK target {idx} successfully")
-        else:
-            print(f"WARNING: GHOST_ContextVK target {idx} not found")
+    if target1 in c:
+        c = c.replace(target1, repl1)
+        print('Patched GHOST_ContextVK select_physical_device successfully')
+    else:
+        print('ERROR: target1 not found in GHOST_ContextVK.cc')
+
+    if target2 in c:
+        c = c.replace(target2, repl2)
+        print('Patched GHOST_ContextVK create_device successfully')
+    else:
+        print('ERROR: target2 not found in GHOST_ContextVK.cc')
 
     with open(p, 'w') as f:
+        f.write(c)
+PYEOF
+fi
+
+# Add Vulkan context creation to GHOST_SystemSDL.cc and GHOST_WindowSDL.cc
+if [ -f "${BLENDER_SRC}/intern/ghost/intern/GHOST_SystemSDL.cc" ]; then
+    python3 - << 'PYEOF'
+import os
+p_sys = os.environ.get('BLENDER_SRC', '') + '/intern/ghost/intern/GHOST_SystemSDL.cc'
+if os.path.exists(p_sys):
+    with open(p_sys, 'r') as f:
+        c = f.read()
+    if '#include "GHOST_ContextVK.hh"' not in c:
+        c = '#include "GHOST_ContextVK.hh"\n' + c
+    target_sys = '''  switch (gpu_settings.context_type) {
+#ifdef WITH_OPENGL_BACKEND
+    case GHOST_kDrawingContextTypeOpenGL: {
+      for (int minor = 6; minor >= 3; --minor) {
+        GHOST_Context *context = new GHOST_ContextSDL(
+            context_params_offscreen,
+            nullptr,
+            0, /* Profile bit. */
+            4,
+            minor,
+            GHOST_OPENGL_SDL_CONTEXT_FLAGS,
+            GHOST_OPENGL_SDL_RESET_NOTIFICATION_STRATEGY);
+
+        if (context->initializeDrawingContext()) {
+          return context;
+        }
+        delete context;
+      }
+      return nullptr;
+    }
+#endif
+
+    default:
+      /* Unsupported backend. */
+      return nullptr;
+  }'''
+    repl_sys = '''  switch (gpu_settings.context_type) {
+#ifdef WITH_OPENGL_BACKEND
+    case GHOST_kDrawingContextTypeOpenGL: {
+      for (int minor = 6; minor >= 3; --minor) {
+        GHOST_Context *context = new GHOST_ContextSDL(
+            context_params_offscreen,
+            nullptr,
+            0, /* Profile bit. */
+            4,
+            minor,
+            GHOST_OPENGL_SDL_CONTEXT_FLAGS,
+            GHOST_OPENGL_SDL_RESET_NOTIFICATION_STRATEGY);
+
+        if (context->initializeDrawingContext()) {
+          return context;
+        }
+        delete context;
+      }
+      return nullptr;
+    }
+#endif
+
+#ifdef WITH_VULKAN_BACKEND
+    case GHOST_kDrawingContextTypeVulkan: {
+      GHOST_Context *context = new GHOST_ContextVK(
+          context_params_offscreen,
+          GHOST_kVulkanPlatformHeadless,
+          nullptr,
+          nullptr,
+          nullptr,
+          nullptr,
+          nullptr,
+          1,
+          1,
+          gpu_settings.preferred_device);
+      if (context->initializeDrawingContext()) {
+        return context;
+      }
+      delete context;
+      return nullptr;
+    }
+#endif
+
+    default:
+      /* Unsupported backend. */
+      return nullptr;
+  }'''
+    if target_sys in c:
+        c = c.replace(target_sys, repl_sys)
+        print('Patched GHOST_SystemSDL.cc with Vulkan offscreen support')
+    else:
+        print('ERROR: target_sys not found in GHOST_SystemSDL.cc')
+    with open(p_sys, 'w') as f:
+        f.write(c)
+
+p_win = os.environ.get('BLENDER_SRC', '') + '/intern/ghost/intern/GHOST_WindowSDL.cc'
+if os.path.exists(p_win):
+    with open(p_win, 'r') as f:
+        c = f.read()
+    if '#include "GHOST_ContextVK.hh"' not in c:
+        c = '#include "GHOST_ContextVK.hh"\n' + c
+    target_win = '''  switch (type) {
+#ifdef WITH_OPENGL_BACKEND
+    case GHOST_kDrawingContextTypeOpenGL: {
+      for (int minor = 6; minor >= 3; --minor) {
+        GHOST_Context *context = new GHOST_ContextSDL(
+            want_context_params_,
+            sdl_win_,
+            0, /* Profile bit. */
+            4,
+            minor,
+            GHOST_OPENGL_SDL_CONTEXT_FLAGS,
+            GHOST_OPENGL_SDL_RESET_NOTIFICATION_STRATEGY);
+
+        if (context->initializeDrawingContext()) {
+          return context;
+        }
+        delete context;
+      }
+      return nullptr;
+    }
+#endif
+
+    default:
+      /* Unsupported backend. */
+      return nullptr;
+  }'''
+    repl_win = '''  switch (type) {
+#ifdef WITH_OPENGL_BACKEND
+    case GHOST_kDrawingContextTypeOpenGL: {
+      for (int minor = 6; minor >= 3; --minor) {
+        GHOST_Context *context = new GHOST_ContextSDL(
+            want_context_params_,
+            sdl_win_,
+            0, /* Profile bit. */
+            4,
+            minor,
+            GHOST_OPENGL_SDL_CONTEXT_FLAGS,
+            GHOST_OPENGL_SDL_RESET_NOTIFICATION_STRATEGY);
+
+        if (context->initializeDrawingContext()) {
+          return context;
+        }
+        delete context;
+      }
+      return nullptr;
+    }
+#endif
+
+#ifdef WITH_VULKAN_BACKEND
+    case GHOST_kDrawingContextTypeVulkan: {
+      GHOST_GPUDevice preferred_device = {};
+      GHOST_Context *context = new GHOST_ContextVK(
+          want_context_params_,
+          GHOST_kVulkanPlatformHeadless,
+          nullptr,
+          nullptr,
+          nullptr,
+          nullptr,
+          nullptr,
+          1,
+          1,
+          preferred_device);
+      if (context->initializeDrawingContext()) {
+        return context;
+      }
+      delete context;
+      return nullptr;
+    }
+#endif
+
+    default:
+      /* Unsupported backend. */
+      return nullptr;
+  }'''
+    if target_win in c:
+        c = c.replace(target_win, repl_win)
+        print('Patched GHOST_WindowSDL.cc with Vulkan window support')
+    else:
+        print('ERROR: target_win not found in GHOST_WindowSDL.cc')
+    with open(p_win, 'w') as f:
         f.write(c)
 PYEOF
 fi
