@@ -1122,12 +1122,6 @@ if os.path.exists(p_mlf):
     with open(p_mlf, 'r') as f:
         c = f.read()
 
-    # Include android log
-    t_inc = '#include "mallocn_intern_function_pointers.hh"'
-    rep_inc = '#include "mallocn_intern_function_pointers.hh"\n#ifdef __ANDROID__\n#  include <android/log.h>\n#endif'
-    if t_inc in c:
-        c = c.replace(t_inc, rep_inc)
-
     # 16-byte aligned MemHead and MemHeadAligned with magic canaries
     t_mlf = '''typedef struct MemHead {
   /* Length of allocated memory block. */
@@ -1219,11 +1213,11 @@ static_assert(sizeof(MemHeadAligned) == 16, "Bad size of MemHeadAligned");'''
     rep_fre = '''  MemHead *memh = MEMHEAD_FROM_PTR(vmemh);
 #ifdef __ANDROID__
   if (memh->magic == MEM_FREED) [[unlikely]] {
-    __android_log_print(ANDROID_LOG_WARN, "BlenderMEM", "DOUBLE FREE PREVENTED for %p\\n", vmemh);
+    fprintf(stderr, "BlenderMEM: DOUBLE FREE PREVENTED for %p\\n", vmemh);
     return;
   }
   if (memh->magic != MEM_MAGIC) [[unlikely]] {
-    __android_log_print(ANDROID_LOG_WARN, "BlenderMEM", "NON-MEM FREE PREVENTED for %p (magic=0x%08x != 0x%08x), passing to libc free()\\n", vmemh, memh->magic, MEM_MAGIC);
+    fprintf(stderr, "BlenderMEM: NON-MEM FREE PREVENTED for %p (magic=0x%08x != 0x%08x), passing to libc free()\\n", vmemh, memh->magic, MEM_MAGIC);
     free(vmemh);
     return;
   }
@@ -1270,7 +1264,7 @@ if os.path.exists(p_mintern):
             f.write(c)
         print('Successfully patched mallocn_intern.hh for 16-byte min alignment')
 
-# 8. Patch creator_signals.cc: dump backtraces to Android logcat on crash or abort
+# 8. Patch creator_signals.cc: dump backtraces to stderr (BlenderCore logcat) on crash or abort
 p_sig = blender_src + '/source/creator/creator_signals.cc'
 if os.path.exists(p_sig):
     with open(p_sig, 'r') as f:
@@ -1279,7 +1273,6 @@ if os.path.exists(p_sig):
     rep_sinc = '''#  include "creator_intern.h" /* Own include. */
 
 #ifdef __ANDROID__
-#  include <android/log.h>
 #  include <unwind.h>
 #  include <dlfcn.h>
 
@@ -1307,21 +1300,22 @@ static void android_log_backtrace(const char *tag, const char *msg)
   AndroidBacktraceState state = {buffer, buffer + 32};
   _Unwind_Backtrace(android_unwind_cb, &state);
   size_t count = state.current - buffer;
-  __android_log_print(ANDROID_LOG_ERROR, tag, "=== CRASH BACKTRACE: %s ===", msg);
+  fprintf(stderr, "=== CRASH BACKTRACE [%s]: %s ===\\n", tag, msg);
   for (size_t i = 0; i < count; ++i) {
     void *addr = buffer[i];
     Dl_info info;
     if (dladdr(addr, &info) && info.dli_sname) {
       ptrdiff_t offset = (char *)addr - (char *)info.dli_saddr;
-      __android_log_print(ANDROID_LOG_ERROR, tag, "  #%02zu pc %p  %s (%s+%td)", i, addr, info.dli_fname ? info.dli_fname : "", info.dli_sname, offset);
+      fprintf(stderr, "  #%02zu pc %p  %s (%s+%td)\\n", i, addr, info.dli_fname ? info.dli_fname : "", info.dli_sname, offset);
     }
     else if (dladdr(addr, &info) && info.dli_fname) {
-      __android_log_print(ANDROID_LOG_ERROR, tag, "  #%02zu pc %p  %s", i, addr, info.dli_fname);
+      fprintf(stderr, "  #%02zu pc %p  %s\\n", i, addr, info.dli_fname);
     }
     else {
-      __android_log_print(ANDROID_LOG_ERROR, tag, "  #%02zu pc %p", i, addr);
+      fprintf(stderr, "  #%02zu pc %p\\n", i, addr);
     }
   }
+  fflush(stderr);
 }
 #endif'''
     if t_sinc in c:
