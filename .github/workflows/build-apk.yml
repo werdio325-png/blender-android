@@ -40,7 +40,7 @@ jobs:
       - name: Set up Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build ccache git wget tar zip unzip openjdk-17-jdk meson pkg-config libeigen3-dev build-essential libtbb-dev gcc-14 g++-14 clang-18 libjpeg-dev libpng-dev zlib1g-dev libzstd-dev libepoxy-dev libfmt-dev libfreetype6-dev libwebp-dev libtiff-dev libxml2-dev libopenimageio-dev libopenexr-dev libimath-dev libshaderc-dev qemu-user-static binfmt-support
+          sudo apt-get install -y cmake ninja-build ccache git wget tar zip unzip openjdk-17-jdk meson pkg-config libeigen3-dev build-essential libtbb-dev gcc-14 g++-14 clang-18 libjpeg-dev libpng-dev zlib1g-dev libzstd-dev libepoxy-dev libfmt-dev libfreetype6-dev libwebp-dev libtiff-dev libxml2-dev libopenimageio-dev libopenexr-dev libimath-dev libshaderc-dev qemu-user-static binfmt-support woff2 fonts-dejavu-core
           if [ -f bionic-arm64.tar.gz ]; then
             sudo tar -xzf bionic-arm64.tar.gz -C /
             sudo chmod -R 755 /system

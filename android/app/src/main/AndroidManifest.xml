@@ -21,7 +21,8 @@
         android:hasCode="true"
         android:largeHeap="true"
         android:debuggable="true"
-        android:extractNativeLibs="true">
+        android:extractNativeLibs="true"
+        android:allowNativeHeapPointerTagging="false">
         
         <activity
             android:name="org.libsdl.app.SDLActivity"
@@ -29,6 +30,7 @@
             android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize|uiMode"
             android:screenOrientation="sensorLandscape"
+            android:launchMode="singleTask"
             android:exported="true">
             
             <intent-filter>

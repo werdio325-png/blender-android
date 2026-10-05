@@ -182,6 +182,48 @@ for f in Inter.woff2 DejaVuSansMono.woff2; do
     curl -sL "https://projects.blender.org/blender/blender/media/branch/main/release/datafiles/fonts/${f}" -o "${BLENDER_SRC}/release/datafiles/fonts/${f}" || true
 done
 
+echo "===> Converting fonts to raw TrueType format for Android FreeType..."
+python3 -m pip install fonttools brotli || true
+python3 -c "
+import os
+try:
+    from fontTools.ttLib import woff2
+    font_dir = '${BLENDER_SRC}/release/datafiles/fonts'
+    for f in ['Inter', 'DejaVuSansMono']:
+        w_path = os.path.join(font_dir, f + '.woff2')
+        t_path = os.path.join(font_dir, f + '.ttf')
+        if os.path.exists(w_path):
+            print('Decompressing ' + f + '.woff2 to ' + t_path + '...')
+            woff2.decompress(w_path, t_path)
+            with open(t_path, 'rb') as src, open(w_path, 'wb') as dst:
+                dst.write(src.read())
+            print('Successfully updated ' + f + '.woff2 with uncompressed TTF bytes.')
+except Exception as e:
+    print('fonttools decompress failed: ' + str(e))
+" || true
+
+for f in Inter DejaVuSansMono; do
+    w_file="${BLENDER_SRC}/release/datafiles/fonts/${f}.woff2"
+    t_file="${BLENDER_SRC}/release/datafiles/fonts/${f}.ttf"
+    if [ ! -f "${t_file}" ] && [ -f "${w_file}" ]; then
+        if command -v woff2_decompress >/dev/null 2>&1; then
+            echo "Decompressing with woff2_decompress: ${f}.woff2"
+            woff2_decompress "${w_file}" || true
+            if [ -f "${t_file}" ]; then
+                cp -f "${t_file}" "${w_file}"
+            fi
+        fi
+    fi
+done
+
+if [ ! -f "${BLENDER_SRC}/release/datafiles/fonts/Inter.ttf" ]; then
+    echo "Downloading fallback Inter TTF from Google Fonts..."
+    curl -sL "https://github.com/google/fonts/raw/main/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf" -o "${BLENDER_SRC}/release/datafiles/fonts/Inter.ttf" || true
+    cp -f "${BLENDER_SRC}/release/datafiles/fonts/Inter.ttf" "${BLENDER_SRC}/release/datafiles/fonts/Inter.woff2"
+    cp -f "${BLENDER_SRC}/release/datafiles/fonts/Inter.ttf" "${BLENDER_SRC}/release/datafiles/fonts/DejaVuSansMono.woff2"
+    cp -f "${BLENDER_SRC}/release/datafiles/fonts/Inter.ttf" "${BLENDER_SRC}/release/datafiles/fonts/DejaVuSansMono.ttf"
+fi
+
 echo "===> Patching Blender CMake for Android ARM64..."
 # Bypass startup.blend size check
 sed -i 's/message(FATAL_ERROR "Detected incomplete startup blend/# &/' "${BLENDER_SRC}/CMakeLists.txt" 
