@@ -421,7 +421,7 @@ if os.path.exists(p_vk):
 
     # Include SDL headers for SDL_Vulkan_CreateSurface
     if '<SDL3/SDL_vulkan.h>' not in c:
-        c = '#ifdef __ANDROID__\n#  include <SDL3/SDL.h>\n#  include <SDL3/SDL_vulkan.h>\n#endif\n' + c
+        c = '#ifdef __ANDROID__\n#  include <SDL3/SDL.h>\n#  include <SDL3/SDL_vulkan.h>\n#  include <cstdio>\n#endif\n' + c
 
     # Platform surface extension
     t_ext = '''    case GHOST_kVulkanPlatformHeadless:
@@ -588,13 +588,11 @@ if os.path.exists(p_vk):
     t_res = '''  VK_CHECK(vkCreateSwapchainKHR(device_vk.vk_device, &create_info, nullptr, &swapchain_),
            GHOST_kFailure);'''
     rep_res = '''  VkResult swapchain_res = vkCreateSwapchainKHR(device_vk.vk_device, &create_info, nullptr, &swapchain_);
-#ifdef __ANDROID__
-  __android_log_print(ANDROID_LOG_INFO, "BlenderVK",
-                      "vkCreateSwapchainKHR result=%d, format=%d, colorSpace=%d, extent=%ux%u, usage=0x%x, alpha=0x%x, count=%u",
-                      swapchain_res, create_info.imageFormat, create_info.imageColorSpace,
-                      create_info.imageExtent.width, create_info.imageExtent.height,
-                      create_info.imageUsage, create_info.compositeAlpha, create_info.minImageCount);
-#endif
+  fprintf(stderr,
+          "BlenderVK: vkCreateSwapchainKHR result=%d, format=%d, colorSpace=%d, extent=%ux%u, usage=0x%x, alpha=0x%x, count=%u\\n",
+          swapchain_res, create_info.imageFormat, create_info.imageColorSpace,
+          create_info.imageExtent.width, create_info.imageExtent.height,
+          create_info.imageUsage, create_info.compositeAlpha, create_info.minImageCount);
   if (swapchain_res != VK_SUCCESS) {
     return GHOST_kFailure;
   }'''
@@ -635,9 +633,7 @@ if os.path.exists(p_vk):
     for (const VkSurfaceFormatKHR &format : formats) {
       if (format.format == desired_fmt) {
         r_surfaceFormat = format;
-#ifdef __ANDROID__
-        __android_log_print(ANDROID_LOG_INFO, "BlenderVK", "Selected surface format: %d, colorSpace: %d", format.format, format.colorSpace);
-#endif
+        fprintf(stderr, "BlenderVK: Selected surface format: %d, colorSpace: %d\\n", format.format, format.colorSpace);
         return true;
       }
     }
@@ -646,9 +642,7 @@ if os.path.exists(p_vk):
   for (const VkSurfaceFormatKHR &format : formats) {
     if (format.format != 56 && format.format != 59) {
       r_surfaceFormat = format;
-#ifdef __ANDROID__
-      __android_log_print(ANDROID_LOG_WARN, "BlenderVK", "Fallback surface format: %d, colorSpace: %d", format.format, format.colorSpace);
-#endif
+      fprintf(stderr, "BlenderVK: Fallback surface format: %d, colorSpace: %d\\n", format.format, format.colorSpace);
       return true;
     }
   }
