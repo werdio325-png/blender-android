@@ -1116,11 +1116,19 @@ static bool py_use_user_env = false;
             f.write(c)
         print('Successfully patched bpy_interface.cc')
 
-# 6. Patch mallocn_lockfree_impl.cc: ensure 16-byte alignment for MemHead and MemHeadAligned
+# 6. Patch mallocn_lockfree_impl.cc: 16-byte alignment and bulletproof memory canary checks
 p_mlf = blender_src + '/intern/guardedalloc/intern/mallocn_lockfree_impl.cc'
 if os.path.exists(p_mlf):
     with open(p_mlf, 'r') as f:
         c = f.read()
+
+    # Include android log
+    t_inc = '#include "mallocn_intern_function_pointers.hh"'
+    rep_inc = '#include "mallocn_intern_function_pointers.hh"\n#ifdef __ANDROID__\n#  include <android/log.h>\n#endif'
+    if t_inc in c:
+        c = c.replace(t_inc, rep_inc)
+
+    # 16-byte aligned MemHead and MemHeadAligned with magic canaries
     t_mlf = '''typedef struct MemHead {
   /* Length of allocated memory block. */
   size_t len;
@@ -1134,26 +1142,120 @@ typedef struct MemHeadAligned {
 } MemHeadAligned;
 static_assert(MEM_MIN_CPP_ALIGNMENT <= alignof(MemHeadAligned), "Bad alignment of MemHeadAligned");
 static_assert(MEM_MIN_CPP_ALIGNMENT <= sizeof(MemHeadAligned), "Bad size of MemHeadAligned");'''
-    rep_mlf = '''typedef struct alignas(16) MemHead {
-  /* Length of allocated memory block. */
-  size_t pad;
+
+    rep_mlf = '''#define MEM_MAGIC 0x424C454E /* 'BLEN' */
+#define MEM_FREED 0xDEADBEEF
+
+typedef struct alignas(16) MemHead {
+  uint32_t magic;
+  uint32_t pad;
   size_t len;
 } MemHead;
 static_assert(MEM_MIN_CPP_ALIGNMENT <= alignof(MemHead), "Bad alignment of MemHead");
 static_assert(MEM_MIN_CPP_ALIGNMENT <= sizeof(MemHead), "Bad size of MemHead");
+static_assert(sizeof(MemHead) == 16, "Bad size of MemHead");
 
 typedef struct alignas(16) MemHeadAligned {
+  uint32_t magic;
   short alignment;
-  char pad[6];
+  char pad[2];
   size_t len;
 } MemHeadAligned;
 static_assert(MEM_MIN_CPP_ALIGNMENT <= alignof(MemHeadAligned), "Bad alignment of MemHeadAligned");
-static_assert(MEM_MIN_CPP_ALIGNMENT <= sizeof(MemHeadAligned), "Bad size of MemHeadAligned");'''
+static_assert(MEM_MIN_CPP_ALIGNMENT <= sizeof(MemHeadAligned), "Bad size of MemHeadAligned");
+static_assert(sizeof(MemHeadAligned) == 16, "Bad size of MemHeadAligned");'''
+
     if t_mlf in c:
         c = c.replace(t_mlf, rep_mlf)
-        with open(p_mlf, 'w') as f:
-            f.write(c)
-        print('Successfully patched mallocn_lockfree_impl.cc for 16-byte alignment')
+
+    # malloc
+    t_mal = '''  memh = (MemHead *)malloc(len + sizeof(MemHead));
+  PRF_memory_alloc(memh, len + sizeof(MemHead));
+
+  if (memh) [[likely]] {'''
+    rep_mal = '''  memh = (MemHead *)malloc(len + sizeof(MemHead));
+  PRF_memory_alloc(memh, len + sizeof(MemHead));
+
+  if (memh) [[likely]] {
+    memh->magic = MEM_MAGIC;
+    memh->pad = 0;'''
+    if t_mal in c:
+        c = c.replace(t_mal, rep_mal)
+
+    # calloc
+    t_cal = '''  memh = (MemHead *)calloc(1, len + sizeof(MemHead));
+  PRF_memory_alloc(memh, len + sizeof(MemHead));
+
+  if (memh) [[likely]] {'''
+    rep_cal = '''  memh = (MemHead *)calloc(1, len + sizeof(MemHead));
+  PRF_memory_alloc(memh, len + sizeof(MemHead));
+
+  if (memh) [[likely]] {
+    memh->magic = MEM_MAGIC;
+    memh->pad = 0;'''
+    if t_cal in c:
+        c = c.replace(t_cal, rep_cal)
+
+    # aligned
+    t_alg = '''    memh->len = len | size_t(MEMHEAD_FLAG_ALIGN) |
+                size_t(destructor_type == DestructorType::NonTrivial ?
+                           MEMHEAD_FLAG_NONTRIVIAL_DESTRUCTOR :
+                           0);
+    memh->alignment = short(alignment);'''
+    rep_alg = '''    memh->magic = MEM_MAGIC;
+    memh->alignment = short(alignment);
+    memh->pad[0] = 0;
+    memh->pad[1] = 0;
+    memh->len = len | size_t(MEMHEAD_FLAG_ALIGN) |
+                size_t(destructor_type == DestructorType::NonTrivial ?
+                           MEMHEAD_FLAG_NONTRIVIAL_DESTRUCTOR :
+                           0);'''
+    if t_alg in c:
+        c = c.replace(t_alg, rep_alg)
+
+    # free: protect against double free and non-MEM pointer corruption
+    t_fre = '''  MemHead *memh = MEMHEAD_FROM_PTR(vmemh);
+  size_t len = MEMHEAD_LEN(memh);'''
+    rep_fre = '''  MemHead *memh = MEMHEAD_FROM_PTR(vmemh);
+#ifdef __ANDROID__
+  if (memh->magic == MEM_FREED) [[unlikely]] {
+    __android_log_print(ANDROID_LOG_WARN, "BlenderMEM", "DOUBLE FREE PREVENTED for %p\\n", vmemh);
+    return;
+  }
+  if (memh->magic != MEM_MAGIC) [[unlikely]] {
+    __android_log_print(ANDROID_LOG_WARN, "BlenderMEM", "NON-MEM FREE PREVENTED for %p (magic=0x%08x != 0x%08x), passing to libc free()\\n", vmemh, memh->magic, MEM_MAGIC);
+    free(vmemh);
+    return;
+  }
+  memh->magic = MEM_FREED;
+#endif
+  size_t len = MEMHEAD_LEN(memh);'''
+    if t_fre in c:
+        c = c.replace(t_fre, rep_fre)
+
+    # alloc_len safe check
+    t_len = '''size_t MEM_lockfree_allocN_len(const void *vmemh)
+{
+  if (vmemh) [[likely]] {
+    return MEMHEAD_LEN(MEMHEAD_FROM_PTR(vmemh));
+  }'''
+    rep_len = '''size_t MEM_lockfree_allocN_len(const void *vmemh)
+{
+  if (vmemh) [[likely]] {
+    const MemHead *memh = MEMHEAD_FROM_PTR(vmemh);
+#ifdef __ANDROID__
+    if (memh->magic != MEM_MAGIC && memh->magic != MEM_FREED) {
+      return 0;
+    }
+#endif
+    return MEMHEAD_LEN(memh);
+  }'''
+    if t_len in c:
+        c = c.replace(t_len, rep_len)
+
+    with open(p_mlf, 'w') as f:
+        f.write(c)
+    print('Successfully patched mallocn_lockfree_impl.cc with canary tags and alignment')
 
 # 7. Patch mallocn_intern.hh: set ALIGNED_MALLOC_MINIMUM_ALIGNMENT to 16
 p_mintern = blender_src + '/intern/guardedalloc/intern/mallocn_intern.hh'
@@ -1168,21 +1270,145 @@ if os.path.exists(p_mintern):
             f.write(c)
         print('Successfully patched mallocn_intern.hh for 16-byte min alignment')
 
-# 8. Patch downloader.py: fallback from multiprocessing.synchronize.Event to threading.Event
+# 8. Patch creator_signals.cc: dump backtraces to Android logcat on crash or abort
+p_sig = blender_src + '/source/creator/creator_signals.cc'
+if os.path.exists(p_sig):
+    with open(p_sig, 'r') as f:
+        c = f.read()
+    t_sinc = '#  include "creator_intern.h" /* Own include. */'
+    rep_sinc = '''#  include "creator_intern.h" /* Own include. */
+
+#ifdef __ANDROID__
+#  include <android/log.h>
+#  include <unwind.h>
+#  include <dlfcn.h>
+
+struct AndroidBacktraceState {
+  void **current;
+  void **end;
+};
+
+static _Unwind_Reason_Code android_unwind_cb(struct _Unwind_Context *context, void *arg)
+{
+  AndroidBacktraceState *state = static_cast<AndroidBacktraceState *>(arg);
+  uintptr_t pc = _Unwind_GetIP(context);
+  if (pc) {
+    if (state->current == state->end) {
+      return _URC_END_OF_STACK;
+    }
+    *state->current++ = reinterpret_cast<void *>(pc);
+  }
+  return _URC_NO_REASON;
+}
+
+static void android_log_backtrace(const char *tag, const char *msg)
+{
+  void *buffer[32];
+  AndroidBacktraceState state = {buffer, buffer + 32};
+  _Unwind_Backtrace(android_unwind_cb, &state);
+  size_t count = state.current - buffer;
+  __android_log_print(ANDROID_LOG_ERROR, tag, "=== CRASH BACKTRACE: %s ===", msg);
+  for (size_t i = 0; i < count; ++i) {
+    void *addr = buffer[i];
+    Dl_info info;
+    if (dladdr(addr, &info) && info.dli_sname) {
+      ptrdiff_t offset = (char *)addr - (char *)info.dli_saddr;
+      __android_log_print(ANDROID_LOG_ERROR, tag, "  #%02zu pc %p  %s (%s+%td)", i, addr, info.dli_fname ? info.dli_fname : "", info.dli_sname, offset);
+    }
+    else if (dladdr(addr, &info) && info.dli_fname) {
+      __android_log_print(ANDROID_LOG_ERROR, tag, "  #%02zu pc %p  %s", i, addr, info.dli_fname);
+    }
+    else {
+      __android_log_print(ANDROID_LOG_ERROR, tag, "  #%02zu pc %p", i, addr);
+    }
+  }
+}
+#endif'''
+    if t_sinc in c:
+        c = c.replace(t_sinc, rep_sinc)
+
+    t_abort = '''static void sig_handle_abort(int /*signum*/)
+{
+  /* Delete content of temp directory. */
+  BKE_tempdir_session_purge();
+}'''
+    rep_abort = '''static void sig_handle_abort(int signum)
+{
+#ifdef __ANDROID__
+  android_log_backtrace("BlenderCrash", "SIGABRT trapped");
+  signal(signum, SIG_DFL);
+  raise(signum);
+#else
+  /* Delete content of temp directory. */
+  BKE_tempdir_session_purge();
+#endif
+}'''
+    if t_abort in c:
+        c = c.replace(t_abort, rep_abort)
+
+    t_scrash = '''static void sig_handle_crash_fn(int signum)
+{
+  auto crash_func = [&]() {'''
+    rep_scrash = '''static void sig_handle_crash_fn(int signum)
+{
+#ifdef __ANDROID__
+  android_log_backtrace("BlenderCrash", "SIGSEGV / fatal signal trapped");
+#endif
+  auto crash_func = [&]() {'''
+    if t_scrash in c:
+        c = c.replace(t_scrash, rep_scrash)
+
+    with open(p_sig, 'w') as f:
+        f.write(c)
+    print('Successfully patched creator_signals.cc for Android backtraces')
+
+# 9. Patch downloader.py: fallbacks for multiprocessing and missing network libraries
 p_dl = blender_src + '/scripts/modules/_bpy_internal/http/downloader.py'
 if os.path.exists(p_dl):
     with open(p_dl, 'r') as f:
         c = f.read()
-    t_dl = 'from multiprocessing.synchronize import Event as EventClass'
+    t_dl = '''from multiprocessing.synchronize import Event as EventClass
+
+import cattrs
+import cattrs.preconf.json
+import requests
+import requests.adapters
+import urllib3.util.retry'''
     rep_dl = '''try:
     from multiprocessing.synchronize import Event as EventClass
 except ImportError:
-    from threading import Event as EventClass'''
+    from threading import Event as EventClass
+
+try:
+    import cattrs
+    import cattrs.preconf.json
+    import requests
+    import requests.adapters
+    import urllib3.util.retry
+except ImportError:
+    cattrs = None
+    requests = None'''
     if t_dl in c:
         c = c.replace(t_dl, rep_dl)
         with open(p_dl, 'w') as f:
             f.write(c)
-        print('Successfully patched downloader.py to avoid multiprocessing import error')
+        print('Successfully patched downloader.py to avoid missing library import errors')
+
+# 10. Patch bl_pkg/__init__.py: safe remote library restore
+p_pkg = blender_src + '/scripts/addons_core/bl_pkg/__init__.py'
+if os.path.exists(p_pkg):
+    with open(p_pkg, 'r') as f:
+        c = f.read()
+    t_pkg = '    from _bpy_internal.assets.remote_library import listing_downloader'
+    rep_pkg = '''    try:
+        from _bpy_internal.assets.remote_library import listing_downloader
+    except (ImportError, ModuleNotFoundError):
+        return'''
+    if t_pkg in c:
+        c = c.replace(t_pkg, rep_pkg)
+        with open(p_pkg, 'w') as f:
+            f.write(c)
+        print('Successfully patched bl_pkg/__init__.py')
 
 PYEOF
 
