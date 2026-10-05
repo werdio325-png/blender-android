@@ -414,7 +414,7 @@ PYEOF
 fi
 
 
-# Ensure GHOST_ContextVK does not reject Android GPUs lacking geometryShader or dualSrcBlend
+# Ensure GHOST_ContextVK does not reject Android GPUs lacking geometryShader, dualSrcBlend, or drawIndirectFirstInstance
 if [ -f "${BLENDER_SRC}/intern/ghost/intern/GHOST_ContextVK.cc" ]; then
     python3 - << 'PYEOF'
 import os
@@ -423,36 +423,47 @@ if os.path.exists(p):
     with open(p, 'r') as f:
         c = f.read()
 
-    t1 = '''#ifndef __APPLE__
+    t1 = """#ifndef __APPLE__
           !device_vk.features.features.geometryShader ||
-#endif
-          !device_vk.features.features.fragmentStoresAndAtomics ||
-          !device_vk.features.features.imageCubeArray ||
-          !device_vk.features.features.dualSrcBlend || !device_vk.features.features.imageCubeArray'''
+#endif"""
+    rep1 = """#if !defined(__APPLE__) && !defined(__ANDROID__)
+          !device_vk.features.features.geometryShader ||
+#endif"""
 
-    rep1 = '''#if !defined(__APPLE__) && !defined(__ANDROID__)
-          !device_vk.features.features.geometryShader ||
+    t2 = "          !device_vk.features.features.dualSrcBlend ||"
+    rep2 = """#ifndef __ANDROID__
           !device_vk.features.features.dualSrcBlend ||
-#endif
-          !device_vk.features.features.fragmentStoresAndAtomics ||
-          !device_vk.features.features.imageCubeArray'''
+#endif"""
 
-    t2 = '''#ifndef __APPLE__
+    t3 = """#ifndef __APPLE__
     device_features.geometryShader = VK_TRUE;
-#endif'''
-
-    rep2 = '''#if !defined(__APPLE__) && !defined(__ANDROID__)
+#endif"""
+    rep3 = """#if !defined(__APPLE__) && !defined(__ANDROID__)
     device_features.geometryShader = VK_TRUE;
 #else
     device_features.geometryShader = device.features.features.geometryShader;
-#endif'''
+#endif"""
 
-    if t1 in c:
-        c = c.replace(t1, rep1)
-        print('Patched GHOST_ContextVK select_physical_device for Android')
-    if t2 in c:
-        c = c.replace(t2, rep2)
-        print('Patched GHOST_ContextVK geometryShader feature flag for Android')
+    t4 = "    device_features.dualSrcBlend = VK_TRUE;"
+    rep4 = """#ifndef __ANDROID__
+    device_features.dualSrcBlend = VK_TRUE;
+#else
+    device_features.dualSrcBlend = device.features.features.dualSrcBlend;
+#endif"""
+
+    t5 = "    device_features.drawIndirectFirstInstance = VK_TRUE;"
+    rep5 = """#ifndef __ANDROID__
+    device_features.drawIndirectFirstInstance = VK_TRUE;
+#else
+    device_features.drawIndirectFirstInstance = device.features.features.drawIndirectFirstInstance;
+#endif"""
+
+    for idx, (t, r) in enumerate([(t1, rep1), (t2, rep2), (t3, rep3), (t4, rep4), (t5, rep5)], 1):
+        if t in c:
+            c = c.replace(t, r)
+            print(f"Patched GHOST_ContextVK target {idx} successfully")
+        else:
+            print(f"WARNING: GHOST_ContextVK target {idx} not found")
 
     with open(p, 'w') as f:
         f.write(c)
