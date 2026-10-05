@@ -555,17 +555,54 @@ if os.path.exists(p_vk):
         c = c.replace(t_swap_ext, rep_swap_ext)
         print('Patched swapchain extent in GHOST_ContextVK.cc')
 
-    # imageUsage: support COLOR_ATTACHMENT fallback
-    t_usage = 'create_info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |'
-    rep_usage = '''VkImageUsageFlags desired_usage = (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) ?
-                                          VK_IMAGE_USAGE_TRANSFER_DST_BIT :
-                                          VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-  create_info.imageUsage = desired_usage |'''
-    if t_usage in c:
-        c = c.replace(t_usage, rep_usage)
-        print('Patched imageUsage in GHOST_ContextVK.cc')
+    # imageUsage & compositeAlpha in recreateSwapchain
+    t_ci = '''  create_info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                           (use_hdr_swapchain ? VK_IMAGE_USAGE_STORAGE_BIT : 0);
+  create_info.preTransform = capabilities.currentTransform;
+  create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;'''
+    rep_ci = '''  VkImageUsageFlags desired_usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  if (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) {
+    desired_usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+  }
+  if (use_hdr_swapchain && (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT)) {
+    desired_usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+  }
+  create_info.imageUsage = desired_usage;
+  create_info.preTransform = capabilities.currentTransform;
 
-    # Fallback in selectSurfaceFormat
+  VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+  if ((capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) == 0) {
+    if (capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) {
+      compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+    }
+    else if (capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) {
+      compositeAlpha = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
+    }
+  }
+  create_info.compositeAlpha = compositeAlpha;'''
+    if t_ci in c:
+        c = c.replace(t_ci, rep_ci)
+        print('Patched imageUsage and compositeAlpha in GHOST_ContextVK.cc')
+
+    # Log and check vkCreateSwapchainKHR result
+    t_res = '''  VK_CHECK(vkCreateSwapchainKHR(device_vk.vk_device, &create_info, nullptr, &swapchain_),
+           GHOST_kFailure);'''
+    rep_res = '''  VkResult swapchain_res = vkCreateSwapchainKHR(device_vk.vk_device, &create_info, nullptr, &swapchain_);
+#ifdef __ANDROID__
+  __android_log_print(ANDROID_LOG_INFO, "BlenderVK",
+                      "vkCreateSwapchainKHR result=%d, format=%d, colorSpace=%d, extent=%ux%u, usage=0x%x, alpha=0x%x, count=%u",
+                      swapchain_res, create_info.imageFormat, create_info.imageColorSpace,
+                      create_info.imageExtent.width, create_info.imageExtent.height,
+                      create_info.imageUsage, create_info.compositeAlpha, create_info.minImageCount);
+#endif
+  if (swapchain_res != VK_SUCCESS) {
+    return GHOST_kFailure;
+  }'''
+    if t_res in c:
+        c = c.replace(t_res, rep_res)
+        print('Patched vkCreateSwapchainKHR logging in GHOST_ContextVK.cc')
+
+    # Extended format search in selectSurfaceFormat
     t_fmt = '''    for (const VkSurfaceFormatKHR &format : formats) {
       if (format.format == config.format && format.colorSpace == config.colorSpace) {
         r_surfaceFormat = format;
@@ -584,9 +621,36 @@ if os.path.exists(p_vk):
     }
   }
 
-  if (!formats.empty()) {
-    r_surfaceFormat = formats[0];
-    return true;
+  /* Extended format search for Android / Mobile GPUs */
+  const VkFormat fallback_formats[] = {
+      VK_FORMAT_R8G8B8A8_UNORM,
+      VK_FORMAT_R8G8B8A8_SRGB,
+      VK_FORMAT_B8G8R8A8_UNORM,
+      VK_FORMAT_B8G8R8A8_SRGB,
+      VK_FORMAT_A2B10G10R10_UNORM_PACK32,
+      VK_FORMAT_R5G6B5_UNORM_PACK16,
+  };
+
+  for (VkFormat desired_fmt : fallback_formats) {
+    for (const VkSurfaceFormatKHR &format : formats) {
+      if (format.format == desired_fmt) {
+        r_surfaceFormat = format;
+#ifdef __ANDROID__
+        __android_log_print(ANDROID_LOG_INFO, "BlenderVK", "Selected surface format: %d, colorSpace: %d", format.format, format.colorSpace);
+#endif
+        return true;
+      }
+    }
+  }
+
+  for (const VkSurfaceFormatKHR &format : formats) {
+    if (format.format != 56 && format.format != 59) {
+      r_surfaceFormat = format;
+#ifdef __ANDROID__
+      __android_log_print(ANDROID_LOG_WARN, "BlenderVK", "Fallback surface format: %d, colorSpace: %d", format.format, format.colorSpace);
+#endif
+      return true;
+    }
   }
 
   return false;

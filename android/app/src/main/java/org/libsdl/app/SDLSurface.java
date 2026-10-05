@@ -55,6 +55,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     protected SDLSurface(Context context) {
         super(context);
         getHolder().addCallback(this);
+        getHolder().setFormat(android.graphics.PixelFormat.RGBA_8888);
 
         scaleGestureDetector = new ScaleGestureDetector(context, this);
 
