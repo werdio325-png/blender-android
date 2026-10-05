@@ -1360,7 +1360,7 @@ p_ps = blender_src + "/source/blender/windowmanager/intern/wm_platform_support.c
 if os.path.exists(p_ps):
     with open(p_ps, "r") as f:
         c = f.read()
-    t_ps = "bool WM_platform_support_perform_checks()"
+    t_ps = "bool WM_platform_support_perform_checks()\n{"
     rep_ps = """bool WM_platform_support_perform_checks()
 {
 #ifdef __ANDROID__
