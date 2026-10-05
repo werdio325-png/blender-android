@@ -1115,6 +1115,75 @@ static bool py_use_user_env = false;
         with open(p_bpy, 'w') as f:
             f.write(c)
         print('Successfully patched bpy_interface.cc')
+
+# 6. Patch mallocn_lockfree_impl.cc: ensure 16-byte alignment for MemHead and MemHeadAligned
+p_mlf = blender_src + '/intern/guardedalloc/intern/mallocn_lockfree_impl.cc'
+if os.path.exists(p_mlf):
+    with open(p_mlf, 'r') as f:
+        c = f.read()
+    t_mlf = '''typedef struct MemHead {
+  /* Length of allocated memory block. */
+  size_t len;
+} MemHead;
+static_assert(MEM_MIN_CPP_ALIGNMENT <= alignof(MemHead), "Bad alignment of MemHead");
+static_assert(MEM_MIN_CPP_ALIGNMENT <= sizeof(MemHead), "Bad size of MemHead");
+
+typedef struct MemHeadAligned {
+  short alignment;
+  size_t len;
+} MemHeadAligned;
+static_assert(MEM_MIN_CPP_ALIGNMENT <= alignof(MemHeadAligned), "Bad alignment of MemHeadAligned");
+static_assert(MEM_MIN_CPP_ALIGNMENT <= sizeof(MemHeadAligned), "Bad size of MemHeadAligned");'''
+    rep_mlf = '''typedef struct alignas(16) MemHead {
+  /* Length of allocated memory block. */
+  size_t pad;
+  size_t len;
+} MemHead;
+static_assert(MEM_MIN_CPP_ALIGNMENT <= alignof(MemHead), "Bad alignment of MemHead");
+static_assert(MEM_MIN_CPP_ALIGNMENT <= sizeof(MemHead), "Bad size of MemHead");
+
+typedef struct alignas(16) MemHeadAligned {
+  short alignment;
+  char pad[6];
+  size_t len;
+} MemHeadAligned;
+static_assert(MEM_MIN_CPP_ALIGNMENT <= alignof(MemHeadAligned), "Bad alignment of MemHeadAligned");
+static_assert(MEM_MIN_CPP_ALIGNMENT <= sizeof(MemHeadAligned), "Bad size of MemHeadAligned");'''
+    if t_mlf in c:
+        c = c.replace(t_mlf, rep_mlf)
+        with open(p_mlf, 'w') as f:
+            f.write(c)
+        print('Successfully patched mallocn_lockfree_impl.cc for 16-byte alignment')
+
+# 7. Patch mallocn_intern.hh: set ALIGNED_MALLOC_MINIMUM_ALIGNMENT to 16
+p_mintern = blender_src + '/intern/guardedalloc/intern/mallocn_intern.hh'
+if os.path.exists(p_mintern):
+    with open(p_mintern, 'r') as f:
+        c = f.read()
+    t_mintern = '#define ALIGNED_MALLOC_MINIMUM_ALIGNMENT sizeof(void *)'
+    rep_mintern = '#define ALIGNED_MALLOC_MINIMUM_ALIGNMENT 16'
+    if t_mintern in c:
+        c = c.replace(t_mintern, rep_mintern)
+        with open(p_mintern, 'w') as f:
+            f.write(c)
+        print('Successfully patched mallocn_intern.hh for 16-byte min alignment')
+
+# 8. Patch downloader.py: fallback from multiprocessing.synchronize.Event to threading.Event
+p_dl = blender_src + '/scripts/modules/_bpy_internal/http/downloader.py'
+if os.path.exists(p_dl):
+    with open(p_dl, 'r') as f:
+        c = f.read()
+    t_dl = 'from multiprocessing.synchronize import Event as EventClass'
+    rep_dl = '''try:
+    from multiprocessing.synchronize import Event as EventClass
+except ImportError:
+    from threading import Event as EventClass'''
+    if t_dl in c:
+        c = c.replace(t_dl, rep_dl)
+        with open(p_dl, 'w') as f:
+            f.write(c)
+        print('Successfully patched downloader.py to avoid multiprocessing import error')
+
 PYEOF
 
 # Add ANativeActivity entry point and Vulkan NDK compatibility stubs to creator.cc
