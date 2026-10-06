@@ -171,7 +171,29 @@ if [ ! -f "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake" ]; the
     exit 1
 fi
 
-echo "===> Downloading critical runtime datafiles and fonts..."
+echo "===> Downloading critical runtime datafiles, icons and fonts..."
+echo "Downloading OpenColorIO fallback config v2.3..."
+mkdir -p "${BLENDER_SRC}/release/datafiles/colormanagement"
+curl -sL "https://projects.blender.org/blender/blender/media/branch/blender-v4.2-release/release/datafiles/colormanagement/config.ocio" -o "${BLENDER_SRC}/release/datafiles/colormanagement/config.ocio" || true
+
+echo "Downloading vector icons from projects.blender.org media..."
+mkdir -p "${BLENDER_SRC}/release/datafiles/icons"
+python3 -c '
+import urllib.request, os
+base_url = "https://projects.blender.org/blender/blender/media/branch/main/release/datafiles/icons/"
+target_dir = os.environ.get("BLENDER_SRC", "") + "/release/datafiles/icons"
+if os.path.exists(target_dir):
+    for icon in os.listdir(target_dir):
+        p = os.path.join(target_dir, icon)
+        if os.path.isfile(p) and os.path.getsize(p) < 200:
+            try:
+                url = base_url + icon
+                urllib.request.urlretrieve(url, p)
+            except Exception:
+                pass
+    print("Downloaded real icons successfully.")
+' || true
+
 mkdir -p "${BLENDER_SRC}/release/datafiles/fonts"
 for f in startup.blend preview.blend preview_grease_pencil.blend splash.png; do
     echo "Downloading ${f}..."
