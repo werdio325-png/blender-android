@@ -402,6 +402,16 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         if (Build.VERSION.SDK_INT >= 30 /* Android 11 (R) */) {
             getWindow().setDecorFitsSystemWindows(false);
+            final WindowInsetsController insetsController = getWindow().getInsetsController();
+            if (insetsController != null) {
+                insetsController.hide(WindowInsets.Type.systemBars());
+                insetsController.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+        }
+        if (Build.VERSION.SDK_INT >= 28 /* Android 9.0 (P) */) {
+            WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(lp);
         }
 
         /* Control activity re-creation */
