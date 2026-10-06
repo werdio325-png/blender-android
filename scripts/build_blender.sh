@@ -588,11 +588,7 @@ if os.path.exists(p_vk):
     device_create_info.enabledExtensionCount = uint32_t(device.extensions.enabled.size());
     device_create_info.ppEnabledExtensionNames = device.extensions.enabled.data();
     device_create_info.pEnabledFeatures = &device_features;
-    for (int i = 1; i < feature_struct_ptr.size(); i++) {
-      ((VkBaseInStructure *)(feature_struct_ptr[i - 1]))->pNext =
-          (VkBaseInStructure *)(feature_struct_ptr[i]);
-    }
-    device_create_info.pNext = feature_struct_ptr.empty() ? nullptr : feature_struct_ptr[0];
+    device_create_info.pNext = nullptr;
 #endif'''
             c = c[:idx_feat] + rep_chunk + c[end_feat:]
             print('Successfully patched create_device in GHOST_ContextVK.cc for Android Mali!')
