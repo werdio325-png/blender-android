@@ -29,7 +29,7 @@
             android:label="Blender"
             android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize|uiMode"
-            android:screenOrientation="userLandscape"
+            android:screenOrientation="landscape"
             android:launchMode="singleTask"
             android:exported="true">
             
