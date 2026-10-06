@@ -172,6 +172,34 @@ if [ ! -f "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake" ]; the
 fi
 
 echo "===> Downloading critical runtime datafiles, icons and fonts..."
+echo "Downloading complete studiolights and matcaps from projects.blender.org media..."
+mkdir -p "${BLENDER_SRC}/release/datafiles/studiolights/world" "${BLENDER_SRC}/release/datafiles/studiolights/matcap"
+python3 -c '
+import urllib.request, os
+base_world = "https://projects.blender.org/blender/blender/media/branch/main/release/datafiles/studiolights/world/"
+base_matcap = "https://projects.blender.org/blender/blender/media/branch/main/release/datafiles/studiolights/matcap/"
+src = os.environ.get("BLENDER_SRC", "")
+
+worlds = ["city.exr", "courtyard.exr", "forest.exr", "interior.exr", "night.exr", "studio.exr", "sunrise.exr", "sunset.exr"]
+matcaps = ["basic_bright.exr", "basic_dark.exr", "basic_grey.exr", "basic_side.exr", "ceramic_dark.exr", "ceramic_lightbulb.exr", "clay_brown.exr", "clay_studio.exr", "red_wax.exr", "resin.exr"]
+
+for w in worlds:
+    try:
+        p = os.path.join(src, "release/datafiles/studiolights/world", w)
+        urllib.request.urlretrieve(base_world + w, p)
+        print("Downloaded world:", w, os.path.getsize(p))
+    except Exception as e:
+        print("Failed world", w, e)
+
+for m in matcaps:
+    try:
+        p = os.path.join(src, "release/datafiles/studiolights/matcap", m)
+        urllib.request.urlretrieve(base_matcap + m, p)
+        print("Downloaded matcap:", m, os.path.getsize(p))
+    except Exception as e:
+        print("Failed matcap", m, e)
+' || true
+
 echo "Downloading OpenColorIO fallback config v2.3..."
 mkdir -p "${BLENDER_SRC}/release/datafiles/colormanagement"
 curl -sL "https://projects.blender.org/blender/blender/media/branch/blender-v4.2-release/release/datafiles/colormanagement/config.ocio" -o "${BLENDER_SRC}/release/datafiles/colormanagement/config.ocio" || true
@@ -540,32 +568,34 @@ if os.path.exists(p_vk):
         c = c.replace(t_select, rep_select)
         print('Patched select_physical_device in GHOST_ContextVK.cc')
 
-    # create_device: on Android use device.features.features directly without demanding desktop-only features
-    t_dev = '''    VkPhysicalDeviceFeatures device_features = {};
-#ifndef __APPLE__
-    device_features.geometryShader = VK_TRUE;
-#endif
-    device_features.vertexPipelineStoresAndAtomics = VK_TRUE;
-    device_features.multiViewport = VK_TRUE;
-    device_features.shaderClipDistance = VK_TRUE;
-    device_features.fragmentStoresAndAtomics = VK_TRUE;
-    device_features.logicOp = VK_TRUE;
-    device_features.dualSrcBlend = VK_TRUE;
-    device_features.imageCubeArray = VK_TRUE;
-    device_features.multiDrawIndirect = VK_TRUE;
-    device_features.drawIndirectFirstInstance = VK_TRUE;
-    device_features.samplerAnisotropy = device.features.features.samplerAnisotropy;
-    device_features.wideLines = device.features.features.wideLines;'''
-
-    rep_dev = '''#ifndef __ANDROID__
-''' + t_dev + '''
+        # create_device: on Android use device.features.features directly without demanding desktop-only features
+    # Bypass strict desktop features block by replacing the whole struct setup
+    if 'device_features.geometryShader = VK_TRUE;' in c:
+        idx_feat = c.find('VkPhysicalDeviceFeatures device_features = {};')
+        end_feat = c.find('device_create_info.pNext = feature_struct_ptr[0];', idx_feat)
+        if idx_feat != -1 and end_feat != -1:
+            end_feat += len('device_create_info.pNext = feature_struct_ptr[0];')
+            old_chunk = c[idx_feat:end_feat]
+            rep_chunk = '''#ifndef __ANDROID__
+''' + old_chunk + '''
 #else
     VkPhysicalDeviceFeatures device_features = device.features.features;
     device_features.robustBufferAccess = VK_FALSE;
+    VkDeviceCreateInfo device_create_info = {};
+    device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    device_create_info.queueCreateInfoCount = uint32_t(queue_create_infos.size());
+    device_create_info.pQueueCreateInfos = queue_create_infos.data();
+    device_create_info.enabledExtensionCount = uint32_t(device.extensions.enabled.size());
+    device_create_info.ppEnabledExtensionNames = device.extensions.enabled.data();
+    device_create_info.pEnabledFeatures = &device_features;
+    for (int i = 1; i < feature_struct_ptr.size(); i++) {
+      ((VkBaseInStructure *)(feature_struct_ptr[i - 1]))->pNext =
+          (VkBaseInStructure *)(feature_struct_ptr[i]);
+    }
+    device_create_info.pNext = feature_struct_ptr.empty() ? nullptr : feature_struct_ptr[0];
 #endif'''
-    if t_dev in c:
-        c = c.replace(t_dev, rep_dev)
-        print('Patched create_device in GHOST_ContextVK.cc')
+            c = c[:idx_feat] + rep_chunk + c[end_feat:]
+            print('Successfully patched create_device in GHOST_ContextVK.cc for Android Mali!')
 
     # recreateSwapchain extent: query SDL window size when extent is UINT32_MAX, 0, or uninitialized
     t_ext_full = '''  use_hdr_swapchain_ = use_hdr_swapchain;
