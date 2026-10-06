@@ -24,8 +24,8 @@ export CXX="${TOOLCHAIN}/bin/${TARGET_TRIPLE}${API_LEVEL}-clang++"
 export AR="${TOOLCHAIN}/bin/llvm-ar"
 export RANLIB="${TOOLCHAIN}/bin/llvm-ranlib"
 export READELF="${TOOLCHAIN}/bin/llvm-readelf"
-export CFLAGS="-fPIC -ftls-model=global-dynamic"
-export CXXFLAGS="-fPIC -ftls-model=global-dynamic"
+export CFLAGS="-fPIC -ftls-model=global-dynamic -fno-stack-protector"
+export CXXFLAGS="-fPIC -ftls-model=global-dynamic -fno-stack-protector"
 export LDFLAGS="-fPIC"
 
 echo "===> Unpacking dependencies sysroot..."
@@ -1467,6 +1467,11 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char *a
     setenv("PYTHONPATH", env_buf, 1);
 
     ALOGI("Blender paths: DATAFILES=%s/datafiles, SCRIPTS=%s/scripts", files_dir, files_dir);
+
+    // Ensure pthread stack size is at least 8MB for driver shader compilation
+    pthread_attr_t def_attr;
+    pthread_attr_init(&def_attr);
+    pthread_attr_setstacksize(&def_attr, 8 * 1024 * 1024);
 
     const char *ui_argv[] = {"blender", "--gpu-backend", "vulkan", nullptr};
     int ret = blender_main_impl(3, ui_argv);
