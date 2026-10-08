@@ -16,17 +16,17 @@ find "${ANDROID_NDK_ROOT}" -name "libc++_shared.so" -path "*/arm64*/*" -exec cp 
 find "${APK_DIR}/lib/arm64-v8a" -type l -exec cp --remove-destination "$(readlink -f {})" {} \; 2>/dev/null || true
 
 # Copy Blender shared libs and main binary
-find build-blender/lib -name "*.so*" -exec cp {} "${APK_DIR}/lib/arm64-v8a/" \; 2>/dev/null || true
-find build-blender/bin -name "*.so*" -exec cp {} "${APK_DIR}/lib/arm64-v8a/" \; 2>/dev/null || true
+find "${BLENDER_BUILD_DIR}/lib" -name "*.so*" -exec cp {} "${APK_DIR}/lib/arm64-v8a/" \; 2>/dev/null || true
+find "${BLENDER_BUILD_DIR}/bin" -name "*.so*" -exec cp {} "${APK_DIR}/lib/arm64-v8a/" \; 2>/dev/null || true
 
-if [ -f "build-blender/bin/blender" ]; then
-    cp build-blender/bin/blender "${APK_DIR}/lib/arm64-v8a/libmain.so"
-elif [ -f "build-blender/bin/libblender.so" ]; then
-    cp build-blender/bin/libblender.so "${APK_DIR}/lib/arm64-v8a/libmain.so"
-elif [ -f "build-blender/lib/libblender.so" ]; then
-    cp build-blender/lib/libblender.so "${APK_DIR}/lib/arm64-v8a/libmain.so"
+if [ -f "${BLENDER_BUILD_DIR}/bin/blender" ]; then
+    cp "${BLENDER_BUILD_DIR}/bin/blender" "${APK_DIR}/lib/arm64-v8a/libmain.so"
+elif [ -f "${BLENDER_BUILD_DIR}/bin/libblender.so" ]; then
+    cp "${BLENDER_BUILD_DIR}/bin/libblender.so" "${APK_DIR}/lib/arm64-v8a/libmain.so"
+elif [ -f "${BLENDER_BUILD_DIR}/lib/libblender.so" ]; then
+    cp "${BLENDER_BUILD_DIR}/lib/libblender.so" "${APK_DIR}/lib/arm64-v8a/libmain.so"
 else
-    MAIN_LIB=$(find build-blender -name "libblender.so" -o -name "blender" | head -n 1)
+    MAIN_LIB=$(find "${BLENDER_BUILD_DIR}" -name "libblender.so" -o -name "blender" | head -n 1)
     if [ -n "${MAIN_LIB}" ]; then
         cp "${MAIN_LIB}" "${APK_DIR}/lib/arm64-v8a/libmain.so"
     fi

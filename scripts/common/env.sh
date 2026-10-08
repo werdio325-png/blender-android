@@ -5,8 +5,10 @@ BASE_DIR="${BASE_DIR:-$(pwd)}"
 SYSROOT_DIR="${BASE_DIR}/sysroot-android-arm64"
 BUILD_TMP="${BASE_DIR}/build-tmp"
 BLENDER_SRC="${BUILD_TMP}/blender"
+HOST_TOOLS_DIR="${BUILD_TMP}/build-host-tools"
+BLENDER_BUILD_DIR="${BUILD_TMP}/build-blender"
 API_LEVEL="29"
-export BASE_DIR SYSROOT_DIR BUILD_TMP BLENDER_SRC API_LEVEL
+export BASE_DIR SYSROOT_DIR BUILD_TMP BLENDER_SRC HOST_TOOLS_DIR BLENDER_BUILD_DIR API_LEVEL
 
 if [ -z "${ANDROID_NDK_ROOT:-}" ]; then
     if [ -d "/usr/local/lib/android/sdk/ndk/27.3.13750724" ]; then

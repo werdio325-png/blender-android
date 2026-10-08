@@ -42,7 +42,7 @@ if [ -n "${CCACHE_BIN}" ]; then
     )
 fi
 
-cmake -B build-blender -S blender -G Ninja \
+cmake -B "${BLENDER_BUILD_DIR}" -S "${BLENDER_SRC}" -G Ninja \
     "${CCACHE_ARGS[@]}" \
     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
     -DANDROID_ABI=arm64-v8a \

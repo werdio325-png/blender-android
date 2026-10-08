@@ -8,7 +8,7 @@ cd "${BUILD_TMP}"
 
 # Maximize parallel jobs for faster build speed
 PARALLEL_JOBS="$(nproc 2>/dev/null || echo 4)"
-ninja -C build-blender -j"${PARALLEL_JOBS}"
+ninja -C "${BLENDER_BUILD_DIR}" -j"${PARALLEL_JOBS}"
 
 echo "===> Freeing build disk space before packaging..."
-find build-blender -name "*.o" -delete 2>/dev/null || true
+find "${BLENDER_BUILD_DIR}" -name "*.o" -delete 2>/dev/null || true
