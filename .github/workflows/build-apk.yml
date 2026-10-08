@@ -4,8 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'scripts/build_blender.sh'
-      - 'scripts/build_deps.sh'
+      - 'scripts/**'
       - '.github/workflows/build-apk.yml'
       - 'bionic-arm64.tar.gz'
       - 'android/**'
