@@ -106,9 +106,9 @@ if os.path.exists(p_tex):
     VkFormatProperties format_props = {};
     vkGetPhysicalDeviceFormatProperties(dev.physical_device_get(), vk_fmt, &format_props);
     if ((format_props.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) == 0) {
-      device_format_ = (format_ == TextureFormat::SRGB_DXT1_ ||
-                        format_ == TextureFormat::SRGB_DXT3_ ||
-                        format_ == TextureFormat::SRGB_DXT5_) ?
+      device_format_ = (format_ == TextureFormat::SRGB_DXT1 ||
+                        format_ == TextureFormat::SRGB_DXT3 ||
+                        format_ == TextureFormat::SRGB_DXT5) ?
                            TextureFormat::SRGBA_8_8_8_8 :
                            TextureFormat::UNORM_8_8_8_8;
     }
