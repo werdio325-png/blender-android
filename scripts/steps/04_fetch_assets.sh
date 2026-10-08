@@ -106,3 +106,7 @@ if [ ! -f "${BLENDER_SRC}/release/datafiles/fonts/Inter.ttf" ]; then
     cp -f "${BLENDER_SRC}/release/datafiles/fonts/Inter.ttf" "${BLENDER_SRC}/release/datafiles/fonts/DejaVuSansMono.ttf"
 fi
 
+echo "===> Downloading bcdec.h (Vulkan BCn texture decoder for Mali GPU)..."
+mkdir -p "${BLENDER_SRC}/source/blender/gpu/vulkan"
+curl -sL "https://raw.githubusercontent.com/iOrange/bcdec/main/bcdec.h" -o "${BLENDER_SRC}/source/blender/gpu/vulkan/bcdec.h" || true
+

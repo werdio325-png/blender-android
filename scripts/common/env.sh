@@ -19,7 +19,7 @@ fi
 TOOLCHAIN="${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64"
 CMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake"
 TARGET_TRIPLE="aarch64-linux-android"
-export TOOLCHAIN CMAKE_TOOLCHAIN_FILE TARGET_TRIPLE
+export TOOLCHAIN TARGET_TRIPLE
 
 export CC="${TOOLCHAIN}/bin/${TARGET_TRIPLE}${API_LEVEL}-clang"
 export CXX="${TOOLCHAIN}/bin/${TARGET_TRIPLE}${API_LEVEL}-clang++"

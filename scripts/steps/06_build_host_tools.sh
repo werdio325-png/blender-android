@@ -64,7 +64,9 @@ sudo cp -r "${SYSROOT_DIR}/usr/include/OpenEXR/"* /usr/local/include/ 2>/dev/nul
 echo "===> Building native host code generators (datatoc, shader_tool, makesdna, makesrna)..." 
 HOST_TOOLS_DIR="${BUILD_TMP}/build-host-tools"
 mkdir -p "${HOST_TOOLS_DIR}"
+unset CMAKE_TOOLCHAIN_FILE
 cmake -B "${HOST_TOOLS_DIR}" -S "${BLENDER_SRC}" -G Ninja \
+    -UCMAKE_TOOLCHAIN_FILE \
     -DCMAKE_C_COMPILER="${HOST_CC}" \
     -DCMAKE_CXX_COMPILER="${HOST_CXX}" \
     -DCMAKE_C_FLAGS="-I${SYSROOT_DIR}/usr/include" \
