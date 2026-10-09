@@ -52,6 +52,8 @@ cmake -B "${BLENDER_BUILD_DIR}" -S "${BLENDER_SRC}" -G Ninja \
     -DWITH_CROSSCOMPILED_TOOLS=ON \
     -DCROSSCOMPILE_TOOLDIR="${HOST_TOOLS_DIR}/bin" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DCMAKE_C_FLAGS="${CFLAGS} -fno-stack-protector" \
+    -DCMAKE_CXX_FLAGS="${CXXFLAGS} -fno-stack-protector" \
     -DWITH_INSTALL_PORTABLE=OFF \
     -DCMAKE_SHARED_LINKER_FLAGS="-L${SYSROOT_DIR}/usr/lib -Wl,--undefined-version" \
     -DCMAKE_EXE_LINKER_FLAGS="-pie -L${SYSROOT_DIR}/usr/lib -Wl,--undefined-version" \

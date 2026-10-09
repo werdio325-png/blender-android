@@ -133,7 +133,7 @@ if os.path.exists(p_th):
     rep_th = '''#ifdef __ANDROID__
       pthread_attr_t t_attr;
       pthread_attr_init(&t_attr);
-      pthread_attr_setstacksize(&t_attr, 8 * 1024 * 1024);
+      pthread_attr_setstacksize(&t_attr, 16 * 1024 * 1024);
       pthread_create(&tslot.pthread, &t_attr, tslot_thread_start, &tslot);
       pthread_attr_destroy(&t_attr);
 #else
@@ -144,7 +144,7 @@ if os.path.exists(p_th):
         c = c.replace(t_th, rep_th)
         with open(p_th, 'w') as f:
             f.write(c)
-        print('Patched threads.cc: 8MB thread stack size on Android')
+        print('Patched threads.cc: 16MB thread stack size on Android')
 
 print('Vulkan Mali compatibility shim patch applied successfully.')
 PYEOF

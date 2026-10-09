@@ -16,6 +16,7 @@ if [ -f "${BLENDER_SRC}/source/creator/creator.cc" ]; then
 #include <dlfcn.h>
 #include <vulkan/vulkan.h>
 #include <unistd.h>
+#include <sys/resource.h>
 #include <SDL3/SDL.h>
 
 #define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, "BlenderNative", __VA_ARGS__)
@@ -76,15 +77,46 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char *a
 
     ALOGI("Blender paths: DATAFILES=%s/datafiles, SCRIPTS=%s/scripts", files_dir, files_dir);
 
-    // Ensure pthread stack size is at least 8MB for driver shader compilation
-    pthread_attr_t def_attr;
-    pthread_attr_init(&def_attr);
-    pthread_attr_setstacksize(&def_attr, 8 * 1024 * 1024);
+    // Ensure system stack limits allow at least 16MB
+    struct rlimit rl;
+    if (getrlimit(RLIMIT_STACK, &rl) == 0) {
+        if (rl.rlim_cur < 16 * 1024 * 1024) {
+            rl.rlim_cur = 16 * 1024 * 1024;
+            setrlimit(RLIMIT_STACK, &rl);
+        }
+    }
+
+    struct BlenderThreadArgs {
+        int argc;
+        const char **argv;
+        int ret;
+    };
 
     const char *ui_argv[] = {"blender", "--gpu-backend", "vulkan", nullptr};
-    int ret = blender_main_impl(3, ui_argv);
-    ALOGI("blender_main_impl finished with code: %d", ret);
-    _exit(ret);
+    BlenderThreadArgs b_args = {3, ui_argv, 0};
+
+    pthread_attr_t b_attr;
+    pthread_attr_init(&b_attr);
+    pthread_attr_setstacksize(&b_attr, 16 * 1024 * 1024);
+
+    pthread_t b_thread;
+    int b_err = pthread_create(&b_thread, &b_attr, [](void *arg) -> void * {
+        BlenderThreadArgs *a = static_cast<BlenderThreadArgs *>(arg);
+        a->ret = blender_main_impl(a->argc, a->argv);
+        return nullptr;
+    }, &b_args);
+    pthread_attr_destroy(&b_attr);
+
+    if (b_err == 0) {
+        pthread_join(b_thread, nullptr);
+        ALOGI("blender_main_impl finished with code: %d", b_args.ret);
+        _exit(b_args.ret);
+    } else {
+        ALOGE("pthread_create for 16MB stack failed: %d, fallback to direct call", b_err);
+        int ret = blender_main_impl(3, ui_argv);
+        ALOGI("blender_main_impl finished with code: %d", ret);
+        _exit(ret);
+    }
 }
 
 extern "C" {
