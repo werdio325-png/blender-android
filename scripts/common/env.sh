@@ -18,6 +18,11 @@ if [ -z "${ANDROID_NDK_ROOT:-}" ]; then
     fi
 fi
 
+if [ -n "${ANDROID_NDK_ROOT:-}" ] && [ -d "${ANDROID_NDK_ROOT}" ]; then
+    # Disable NDK's forced stack-protector canary traps which conflict with Mali driver & Blender ARM64
+    find "${ANDROID_NDK_ROOT}" -name "flags.cmake" -exec sed -i 's/-fstack-protector-strong/-fno-stack-protector/g' {} + 2>/dev/null || true
+fi
+
 TOOLCHAIN="${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64"
 CMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake"
 TARGET_TRIPLE="aarch64-linux-android"

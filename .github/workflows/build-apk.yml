@@ -46,6 +46,8 @@ jobs:
             sudo tar -xzf bionic-arm64.tar.gz -C /
             sudo chmod -R 755 /system
           fi
+          echo "=== Patching Android NDK flags to disable stack-protector canary traps ==="
+          sudo find /usr/local/lib/android/sdk/ndk -name "flags.cmake" -exec sed -i 's/-fstack-protector-strong/-fno-stack-protector/g' {} + 2>/dev/null || true
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5

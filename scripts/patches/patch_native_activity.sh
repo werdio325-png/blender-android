@@ -51,6 +51,9 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char *a
     SDL_SetHint("SDL_APP_NAME", "Blender");
     SDL_SetHint("SDL_APP_ID", "org.blender.app");
     SDL_SetAppMetadata("Blender", "5.2.0", "org.blender.app");
+    SDL_SetHint("SDL_ANDROID_ORIENTATIONS", "LandscapeLeft LandscapeRight");
+    SDL_SetHint("SDL_HINT_ORIENTATIONS", "LandscapeLeft LandscapeRight");
+    SDL_SetHint("SDL_ANDROID_TRAP_BACK_BUTTON", "1");
 
     const char *files_dir = getenv("HOME");
     if (!files_dir || files_dir[0] == '\0') {
@@ -86,37 +89,11 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char *a
         }
     }
 
-    struct BlenderThreadArgs {
-        int argc;
-        const char **argv;
-        int ret;
-    };
-
     const char *ui_argv[] = {"blender", "--gpu-backend", "vulkan", nullptr};
-    BlenderThreadArgs b_args = {3, ui_argv, 0};
-
-    pthread_attr_t b_attr;
-    pthread_attr_init(&b_attr);
-    pthread_attr_setstacksize(&b_attr, 16 * 1024 * 1024);
-
-    pthread_t b_thread;
-    int b_err = pthread_create(&b_thread, &b_attr, [](void *arg) -> void * {
-        BlenderThreadArgs *a = static_cast<BlenderThreadArgs *>(arg);
-        a->ret = blender_main_impl(a->argc, a->argv);
-        return nullptr;
-    }, &b_args);
-    pthread_attr_destroy(&b_attr);
-
-    if (b_err == 0) {
-        pthread_join(b_thread, nullptr);
-        ALOGI("blender_main_impl finished with code: %d", b_args.ret);
-        _exit(b_args.ret);
-    } else {
-        ALOGE("pthread_create for 16MB stack failed: %d, fallback to direct call", b_err);
-        int ret = blender_main_impl(3, ui_argv);
-        ALOGI("blender_main_impl finished with code: %d", ret);
-        _exit(ret);
-    }
+    ALOGI("Calling blender_main_impl directly on SDLThread (16MB stack)...");
+    int ret = blender_main_impl(3, ui_argv);
+    ALOGI("blender_main_impl finished with code: %d", ret);
+    _exit(ret);
 }
 
 extern "C" {

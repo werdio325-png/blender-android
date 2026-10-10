@@ -14,6 +14,18 @@ sed -i 's/-lutil//g' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cm
 # Remove -no-pie for Android (Android Bionic linker strictly requires PIE executables)
 sed -i 's/-no-pie//g' "${BLENDER_SRC}/build_files/cmake/platform/platform_unix.cmake"
 
+# Enforce -fno-stack-protector across all targets on Android to avoid canary traps in Mali driver
+if [ -f "${BLENDER_SRC}/CMakeLists.txt" ]; then
+    if ! grep -q "add_compile_options(-fno-stack-protector)" "${BLENDER_SRC}/CMakeLists.txt"; then
+        cat << 'CEOF' >> "${BLENDER_SRC}/CMakeLists.txt"
+
+if(ANDROID)
+  add_compile_options(-fno-stack-protector)
+endif()
+CEOF
+    fi
+fi
+
 # Build blender as a shared library for Android NativeActivity
 sed -i 's/add_executable(blender ${EXETYPE} ${SRC})/add_library(blender SHARED ${SRC})/' "${BLENDER_SRC}/source/creator/CMakeLists.txt"
 # Disable TBB malloc proxy checks in platform_unix.cmake
